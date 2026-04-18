@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+
+# Environment Variables (SANGAT PENTING!)
+.env
+
+# Build outputs
+dist/
+build/
+
+# OS generated files
+.DS_Store
