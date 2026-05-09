@@ -330,10 +330,117 @@ function mapCampaignStatus(metaStatus) {
   return map[metaStatus] || 'PAUSED';
 }
 
+
+
+// POST /api/meta/campaigns/:metaCampaignId/analyze
+// Kirim data metrik ke AI Flask, simpan hasil ke tabel AiRecommendation
+const analyzeCampaign = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { metaCampaignId } = req.params;
+
+    // Ambil data kampanye dari DB
+    const metaAccount = await prisma.metaAccount.findFirst({
+      where: { userId },
+    });
+
+    if (!metaAccount) {
+      return res.status(404).json({
+        message: 'Akun Meta Ads belum dihubungkan.',
+      });
+    }
+
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        metaCampaignId: metaCampaignId,
+        metaAccountId: metaAccount.id,
+      },
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        message: 'Kampanye tidak ditemukan. Jalankan /campaigns dan /insights terlebih dahulu.',
+      });
+    }
+
+    // Validasi: pastikan insights sudah ada (spend > 0)
+    if (campaign.spend === 0 && campaign.ctr === 0) {
+      return res.status(400).json({
+        message: 'Data insights belum tersedia. Jalankan endpoint /insights terlebih dahulu.',
+      });
+    }
+
+    // Kirim data ke AI Flask
+    const aiResponse = await axios.post('http://localhost:5001/analyze', {
+      ctr  : campaign.ctr,
+      roas : campaign.roas,
+      reach: campaign.reach,
+      spend: campaign.spend,
+    });
+
+    const { score, label, color, breakdown, recommendations } = aiResponse.data;
+
+    // Simpan atau update hasil AI ke tabel ai_recommendations
+    const savedRecommendation = await prisma.aiRecommendation.upsert({
+      where: {
+        campaignId: campaign.id,
+      },
+      update: {
+        score,
+        recommendations: {
+          label,
+          color,
+          breakdown,
+          items: recommendations,
+        },
+      },
+      create: {
+        campaignId: campaign.id,
+        score,
+        recommendations: {
+          label,
+          color,
+          breakdown,
+          items: recommendations,
+        },
+      },
+    });
+
+    return res.json({
+      message        : 'Analisis AI berhasil.',
+      metaCampaignId,
+      score,
+      label,
+      color,
+      breakdown,
+      recommendations,
+    });
+
+  } catch (err) {
+    console.error('Error analyze campaign:', err.response?.data || err.message);
+
+    // Kalau Flask tidak bisa dihubungi
+    if (err.code === 'ECONNREFUSED') {
+      return res.status(503).json({
+        message: 'AI Service tidak dapat dihubungi. Pastikan Flask server berjalan di port 5001.',
+      });
+    }
+
+    return res.status(500).json({
+      message: 'Gagal menganalisis kampanye.',
+      detail : err.response?.data || err.message,
+    });
+  }
+};
+
+
+
+
 module.exports = {
   connectMeta,
   metaCallback,
   getCampaigns,
   getCampaignInsights,
+  analyzeCampaign, 
   decryptToken,
 };
