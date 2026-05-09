@@ -43,30 +43,35 @@ model MetaAccount {
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaigns Campaign[]
 
+  @@unique([userId, accountId])
   @@map("meta_accounts")
 }
+
 
 // ============================================================
 // MODEL CAMPAIGN
 // ============================================================
 model Campaign {
-  id            Int            @id @default(autoincrement())
-  metaAccountId Int
-  name          String
-  status        CampaignStatus @default(ACTIVE)
-  spend         Float          @default(0)
-  ctr           Float          @default(0)
-  roas          Float          @default(0)
-  reach         Int            @default(0)
-  date          DateTime
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id              Int            @id @default(autoincrement())
+  metaAccountId   Int
+  metaCampaignId  String
+  name            String
+  status          CampaignStatus @default(ACTIVE)
+  spend           Float          @default(0)
+  ctr             Float          @default(0)
+  roas            Float          @default(0)
+  reach           Int            @default(0)
+  date            DateTime
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   metaAccount      MetaAccount       @relation(fields: [metaAccountId], references: [id], onDelete: Cascade)
   aiRecommendation AiRecommendation?
 
+  @@unique([metaAccountId, metaCampaignId])
   @@map("campaigns")
 }
+
 
 enum CampaignStatus {
   ACTIVE
