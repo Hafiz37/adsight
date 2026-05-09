@@ -1,10 +1,35 @@
+// frontend/src/App.jsx
+
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import Login from './pages/Login'
+import Register from './pages/Register'
+import Dashboard from './pages/Dashboard'
+import PrivateRoute from './components/PrivateRoute'
+
 function App() {
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
-      <h1 className="text-4xl font-bold text-blue-600 underline">
-        Halo, Tailwind CSS berhasil diinstal! 🚀
-      </h1>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* Redirect dari "/" ke "/login" */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
+
+        {/* Halaman Login */}
+        <Route path="/login" element={<Login />} />
+
+        {/* Halaman Register */}
+        <Route path="/register" element={<Register />} />
+
+        {/* Halaman Dashboard — dilindungi PrivateRoute */}
+        <Route
+          path="/dashboard"
+          element={
+            <PrivateRoute>
+              <Dashboard />
+            </PrivateRoute>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
   )
 }
 
