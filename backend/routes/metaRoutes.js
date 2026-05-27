@@ -7,7 +7,8 @@ const {
   getCampaigns,
   getCampaignInsights,
   getCampaignRecommendations,
-  analyzeCampaign, 
+  analyzeCampaign,
+  saveMetaConnection,
 } = require('../controllers/metaController');
 
 
@@ -17,6 +18,9 @@ router.get('/connect', verifyToken, connectMeta);
 // callback dari Facebook → tidak pakai verifyToken
 // karena Facebook yang hit endpoint ini, bukan user
 router.get('/callback', metaCallback);
+
+// simpan koneksi Meta Ads → butuh login
+router.post('/save', verifyToken, saveMetaConnection);
 
 // ambil kampanye & insights → butuh login
 router.get('/campaigns', verifyToken, getCampaigns);

@@ -51,13 +51,19 @@ export default function ConnectMetaModal({ isOpen, onClose, onConnectSuccess }) 
         throw new Error(data.message || 'Gagal mendapatkan authorization URL')
       }
 
-      const { authorizationUrl } = await response.json()
+      const data = await response.json()
+      // ✅ PERBAIKAN: Gunakan 'authUrl' sesuai response backend
+      const authUrl = data.authUrl
+
+      if (!authUrl) {
+        throw new Error('Authorization URL tidak ditemukan dalam response')
+      }
 
       // Callback to parent (used) then redirect ke Meta OAuth
-      if (onConnectSuccess) onConnectSuccess(authorizationUrl)
+      if (onConnectSuccess) onConnectSuccess(authUrl)
 
       // Redirect ke Meta OAuth
-      window.location.href = authorizationUrl
+      window.location.href = authUrl
     } catch (err) {
       console.error('Error connecting Meta:', err)
       setError(err.message || 'Gagal menghubungkan akun Meta Ads')

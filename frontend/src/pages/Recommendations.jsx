@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import ScoreGauge from '../components/ScoreGauge';
 import RecommendationCard from '../components/RecommendationCard';
+import ExportPDFButton from '../components/ExportPDFButton';
 
 const Recommendations = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const Recommendations = () => {
   const [recommendations, setRecommendations] = useState([]);
   const [campaignName, setCampaignName] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
+  const [metrics, setMetrics] = useState(null);
 
   // Inisialisasi loading dan error berdasarkan campaignId
   const [loading, setLoading] = useState(!!campaignId);
@@ -51,6 +53,31 @@ const Recommendations = () => {
 
     getRecommendations();
   }, [campaignId, token, apiUrl]); // Dependencies yang diperlukan
+
+  // Fetch insights untuk data metrik (dipakai Export PDF)
+  useEffect(() => {
+    const fetchInsights = async () => {
+      if (!campaignId) return;
+      try {
+        const response = await axios.get(
+          `${apiUrl}/meta/campaigns/${campaignId}/insights`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const insights = response.data.insights;
+        if (insights) {
+          setMetrics({
+            spend: insights.spend || 0,
+            ctr: insights.ctr || 0,
+            roas: insights.roas || 0,
+            reach: insights.reach || 0,
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching insights for PDF:', err);
+      }
+    };
+    fetchInsights();
+  }, [campaignId, token, apiUrl]);
 
   // --- HANDLERS ---
   const handleAnalyzeAgain = async () => {
@@ -138,13 +165,23 @@ const Recommendations = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-2xl font-bold text-white">Rekomendasi ({recommendations.length})</h3>
-                  <button
-                    onClick={handleAnalyzeAgain}
-                    disabled={analyzing}
-                    className="px-6 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-gray-600 text-white font-semibold transition-all text-sm"
-                  >
-                    {analyzing ? "Menganalisis..." : "🔄 Analisis Ulang"}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <ExportPDFButton
+                      metrics={metrics}
+                      score={score}
+                      recommendations={recommendations}
+                      campaignName={campaignName}
+                      variant="ghost"
+                      size="md"
+                    />
+                    <button
+                      onClick={handleAnalyzeAgain}
+                      disabled={analyzing}
+                      className="px-6 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-gray-600 text-white font-semibold transition-all text-sm"
+                    >
+                      {analyzing ? "Menganalisis..." : "🔄 Analisis Ulang"}
+                    </button>
+                  </div>
                 </div>
 
                 {recommendations.length > 0 ? (

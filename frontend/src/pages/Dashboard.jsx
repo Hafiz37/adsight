@@ -5,11 +5,17 @@ import MetricCard from '../components/MetricCard'
 import PerformanceChart from '../components/PerformanceChart'
 import FilterBar from '../components/FilterBar'
 import ConnectMetaModal from '../components/ConnectMetaModal'
+import ExportPDFButton from '../components/ExportPDFButton'
 import { ErrorAlert, WarningAlert } from '../components/ErrorAlert'
 import { LoadingState, SkeletonCard, SkeletonChart } from '../components/LoadingSpinner'
 import { useFetchCampaigns, useFetchInsights, useCheckMetaConnection } from '../hooks/useFetchInsights'
 
-// --- ICONS (Tetap menggunakan Code 1 karena lebih modern) ---
+// Import Halaman Tab Baru
+import PageCampaigns from '../components/PageCampaigns'
+import PageAI from '../components/PageAI'
+import PageReport from '../components/PageReport'
+
+// --- ICONS ---
 const IconDashboard = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
 const IconCampaign = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
 const IconAI = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" /></svg>
@@ -43,7 +49,15 @@ function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose }) {
           {NAV_ITEMS.map((item) => {
             const isActive = activePage === item.id
             return (
-              <button key={item.id} onClick={() => { onNavigate(item.id); onClose() }} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${isActive ? 'bg-violet-600/20 text-violet-400 border border-violet-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
+              <button 
+                key={item.id} 
+                onClick={() => { onNavigate(item.id); onClose() }} 
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${
+                  isActive 
+                    ? 'bg-violet-600/20 text-violet-400 border border-violet-500/30' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                }`}
+              >
                 <span>{item.icon}</span>
                 {item.label}
                 {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-400" />}
@@ -67,28 +81,24 @@ function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose }) {
   )
 }
 
-// --- PAGE DASHBOARD (GABUNGAN LOGIKA 1 & 2) ---
-function PageDashboard({ onOpenConnectModal, onNavigate }) {
-  const { campaigns, isLoading: campaignsLoading, error: campaignsError } = useFetchCampaigns()
-  const { isConnected, isLoading: connectionLoading } = useCheckMetaConnection()
-  const [selectedCampaignId, setSelectedCampaignId] = useState('')
+// --- PAGE DASHBOARD ---
+function PageDashboard({ 
+  campaigns, 
+  campaignsLoading, 
+  campaignsError, 
+  activeCampaignId, 
+  activeCampaign, 
+  insightData, 
+  insightsLoading, 
+  insightsError, 
+  selectedCampaignId, 
+  setSelectedCampaignId, 
+  onNavigate 
+}) {
+  const navigate = useNavigate()
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [dismissedErrors, setDismissedErrors] = useState({})
 
-  // Derived state untuk auto-select kampanye pertama
-  const activeCampaignId = selectedCampaignId || (campaigns.length > 0 ? campaigns[0].metaCampaignId : '')
-  const activeCampaign = campaigns.find(c => c.metaCampaignId === activeCampaignId)
-
-  const { data: insightData, isLoading: insightsLoading, error: insightsError } = useFetchInsights(activeCampaignId)
-
-  // Auto-open modal jika tidak terkoneksi
-  useEffect(() => {
-    if (!connectionLoading && !isConnected) {
-      onOpenConnectModal()
-    }
-  }, [connectionLoading, isConnected, onOpenConnectModal])
-
-  // Fungsi pembantu untuk status (Logika dari Code 2)
   const getStatusLabel = (type, value) => {
     if (!value || value === '-') return null;
     const val = parseFloat(value);
@@ -157,15 +167,27 @@ function PageDashboard({ onOpenConnectModal, onNavigate }) {
           <h2 className="text-2xl font-bold text-white">Dashboard Analitik</h2>
           <p className="text-gray-400 text-sm mt-1">Pantau performa kampanye Meta Ads Anda secara real-time</p>
         </div>
-        {activeCampaignId && (
-          <button 
-            onClick={() => onNavigate('ai')}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-semibold transition-all shadow-lg shadow-violet-600/20"
-          >
-            <IconAI />
-            Lihat Rekomendasi AI
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {activeCampaignId && insightData && (
+            <ExportPDFButton
+              metrics={insightData}
+              score={0}
+              recommendations={[]}
+              campaignName={activeCampaign?.name || 'Kampanye'}
+              variant="secondary"
+              size="md"
+            />
+          )}
+          {activeCampaignId && (
+            <button 
+              onClick={() => onNavigate('ai')}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-semibold transition-all shadow-lg shadow-violet-600/20 cursor-pointer"
+            >
+              <IconAI />
+              Lihat Rekomendasi AI
+            </button>
+          )}
+        </div>
       </div>
 
       {campaignsError && !dismissedErrors.campaigns && (
@@ -245,25 +267,6 @@ function PageDashboard({ onOpenConnectModal, onNavigate }) {
   )
 }
 
-// --- PAGE PLACEHOLDER ---
-function PagePlaceholder({ title, desc }) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-2xl font-bold text-white">{title}</h2>
-        <p className="text-gray-400 text-sm mt-1">{desc}</p>
-      </div>
-      <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-12 flex flex-col items-center justify-center text-center">
-        <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-          <IconAI />
-        </div>
-        <p className="text-gray-400 font-medium">Fitur {title} sedang disiapkan</p>
-        <p className="text-gray-600 text-sm mt-1">Integrasi AI sedang dalam proses pengembangan tahap akhir.</p>
-      </div>
-    </div>
-  )
-}
-
 // --- MAIN DASHBOARD EXPORT ---
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -271,6 +274,69 @@ export default function Dashboard() {
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showConnectModal, setShowConnectModal] = useState(false)
+
+  // LIFTED STATES
+  const { campaigns, isLoading: campaignsLoading, error: campaignsError } = useFetchCampaigns()
+  const { isConnected, isLoading: connectionLoading } = useCheckMetaConnection()
+  const [selectedCampaignId, setSelectedCampaignId] = useState('')
+
+  // Derived state untuk auto-select kampanye pertama
+  const activeCampaignId = selectedCampaignId || (campaigns.length > 0 ? campaigns[0].metaCampaignId : '')
+  const activeCampaign = campaigns.find(c => c.metaCampaignId === activeCampaignId)
+
+  const { data: insightData, isLoading: insightsLoading, error: insightsError } = useFetchInsights(activeCampaignId)
+
+  // Auto-open modal jika tidak terkoneksi
+  useEffect(() => {
+    if (!connectionLoading && !isConnected) {
+      setShowConnectModal(true)
+    }
+  }, [connectionLoading, isConnected])
+
+  // Efek untuk menyimpan koneksi Meta Ads jika baru saja redirect dari OAuth
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const metaConnected = params.get('meta_connected');
+    
+    if (metaConnected === 'true') {
+      const saveConnection = async () => {
+        try {
+          const pending = localStorage.getItem('pendingMetaConnection');
+          if (!pending) return;
+
+          const parsedPending = JSON.parse(pending);
+          const token = localStorage.getItem('token');
+          if (!token) return;
+
+          const response = await fetch('http://localhost:5000/api/meta/save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              accessToken: parsedPending.accessToken,
+              accountId: parsedPending.accountId,
+              accountName: parsedPending.accountName,
+            }),
+          });
+
+          if (response.ok) {
+            localStorage.removeItem('pendingMetaConnection');
+            navigate('/dashboard', { replace: true });
+            window.location.reload();
+          } else {
+            const errData = await response.json();
+            console.error('Gagal menyimpan koneksi Meta:', errData.message);
+          }
+        } catch (err) {
+          console.error('Error saving Meta connection:', err);
+        }
+      };
+
+      saveConnection();
+    }
+  }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('token')
@@ -281,15 +347,64 @@ export default function Dashboard() {
   const renderContent = () => {
     switch (activePage) {
       case 'dashboard':
-        return <PageDashboard onOpenConnectModal={() => setShowConnectModal(true)} onNavigate={setActivePage} />
+        return (
+          <PageDashboard 
+            campaigns={campaigns}
+            campaignsLoading={campaignsLoading}
+            campaignsError={campaignsError}
+            activeCampaignId={activeCampaignId}
+            activeCampaign={activeCampaign}
+            insightData={insightData}
+            insightsLoading={insightsLoading}
+            insightsError={insightsError}
+            selectedCampaignId={selectedCampaignId}
+            setSelectedCampaignId={setSelectedCampaignId}
+            onNavigate={setActivePage}
+            onOpenConnectModal={() => setShowConnectModal(true)}
+          />
+        )
       case 'campaigns':
-        return <PagePlaceholder title="Kampanye" desc="Manajemen lengkap kampanye Meta Ads Anda" />
+        return (
+          <PageCampaigns 
+            campaigns={campaigns}
+            isLoading={campaignsLoading}
+            onSelectCampaign={setSelectedCampaignId}
+            onNavigate={setActivePage}
+          />
+        )
       case 'ai':
-        return <PagePlaceholder title="Rekomendasi AI" desc="Analisis cerdas dan saran optimasi iklan" />
+        return (
+          <PageAI 
+            activeCampaignId={activeCampaignId}
+            campaigns={campaigns}
+            onSelectCampaign={setSelectedCampaignId}
+          />
+        )
       case 'report':
-        return <PagePlaceholder title="Laporan" desc="Export performa iklan ke PDF atau Excel" />
+        return (
+          <PageReport 
+            activeCampaignId={activeCampaignId}
+            campaigns={campaigns}
+            onSelectCampaign={setSelectedCampaignId}
+          />
+        )
       default:
-        return <PageDashboard onOpenConnectModal={() => setShowConnectModal(true)} onNavigate={setActivePage} />
+        return (
+          <PageDashboard 
+            campaigns={campaigns}
+            campaignsLoading={campaignsLoading}
+            campaignsError={campaignsError}
+            activeCampaignId={activeCampaignId}
+            activeCampaign={activeCampaign}
+            insightData={insightData}
+            insightsLoading={insightsLoading}
+            insightsError={insightsError}
+            selectedCampaignId={selectedCampaignId}
+            setSelectedCampaignId={setSelectedCampaignId}
+            onNavigate={setActivePage}
+            onOpenConnectModal={() => setShowConnectModal(true)}
+          />
+        )
     }
   }
 

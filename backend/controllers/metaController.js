@@ -22,14 +22,13 @@ exports.connectMeta = (req, res) => {
 exports.metaCallback = async (req, res) => {
   try {
     const { code } = req.query;
-    const userId = req.user.id;
 
     if (!code) {
       return res.status(400).json({ message: 'Kode autentikasi tidak ditemukan' });
     }
 
     // Tukar kode dengan access token
-    const tokenResponse = await axios.get('https://graph.instagram.com/v18.0/oauth/access_token', {
+    const tokenResponse = await axios.get('https://graph.facebook.com/v18.0/oauth/access_token', {
       params: {
         client_id: process.env.META_APP_ID,
         client_secret: process.env.META_APP_SECRET,
@@ -39,22 +38,98 @@ exports.metaCallback = async (req, res) => {
     });
 
     const accessToken = tokenResponse.data.access_token;
-    const accountId = tokenResponse.data.user_id;
 
-    // Ambil info akun
-    const accountResponse = await axios.get(`https://graph.instagram.com/v18.0/${accountId}`, {
+    if (!accessToken) {
+      return res.status(400).json({ message: 'Gagal mendapatkan access token dari Meta' });
+    }
+
+    // Ambil info akun menggunakan Facebook Graph API
+    const accountResponse = await axios.get('https://graph.facebook.com/v18.0/me', {
       params: {
-        fields: 'name,email',
+        fields: 'id,name,email',
         access_token: accessToken,
       },
     });
 
+    const accountId = accountResponse.data.id;
     const accountName = accountResponse.data.name || 'Unknown Account';
+
+    // ✅ PERBAIKAN: Simpan ke session/cookie untuk diambil user setelah redirect
+    // Atau return data ke frontend untuk disimpan ke localStorage
+    const metaData = {
+      accessToken,
+      accountId: String(accountId),
+      accountName,
+      timestamp: Date.now(),
+    };
+
+    // Simpan ke session (jika menggunakan express-session)
+    // req.session.pendingMetaConnection = metaData;
+
+    // ATAU: Return HTML yang auto-redirect dengan data di localStorage
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Menghubungkan Meta Ads...</title>
+        <script>
+          // Simpan data Meta ke localStorage
+          const metaData = ${JSON.stringify(metaData)};
+          localStorage.setItem('pendingMetaConnection', JSON.stringify(metaData));
+          
+          // Redirect kembali ke dashboard
+          window.location.href = 'http://localhost:5173/dashboard?meta_connected=true';
+        </script>
+      </head>
+      <body>
+        <p>Menghubungkan akun Meta Ads Anda... Tunggu sebentar...</p>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('Meta callback error:', error.response?.data || error.message);
+    
+    // Return error page yang user-friendly
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Error Koneksi</title>
+        <style>
+          body { font-family: Arial; margin: 50px; }
+          .error { color: red; }
+        </style>
+      </head>
+      <body>
+        <h1 class="error">⚠️ Gagal Menghubungkan Meta Ads</h1>
+        <p>${error.response?.data?.error_description || error.message}</p>
+        <button onclick="window.location.href='http://localhost:5173/dashboard'">
+          Kembali ke Dashboard
+        </button>
+      </body>
+      </html>
+    `);
+  }
+};
+
+// ===== SAVE META CONNECTION (NEW) =====
+// Endpoint baru untuk menyimpan koneksi Meta yang sudah disimpan di localStorage
+exports.saveMetaConnection = async (req, res) => {
+  try {
+    const userId = req.user.userId; // Dari verifyToken middleware
+    const { accessToken, accountId, accountName } = req.body;
+
+    if (!accessToken || !accountId) {
+      return res.status(400).json({ message: 'Data Meta Ads tidak lengkap' });
+    }
 
     // Simpan ke database
     const metaAccount = await prisma.metaAccount.upsert({
       where: {
-        metaAccountId: String(accountId),
+        userId_accountId: {
+          userId: userId,
+          accountId: String(accountId),
+        },
       },
       update: {
         accessToken: accessToken,
@@ -62,20 +137,21 @@ exports.metaCallback = async (req, res) => {
       },
       create: {
         userId: userId,
-        metaAccountId: String(accountId),
+        accountId: String(accountId),
         accessToken: accessToken,
         accountName: accountName,
       },
     });
 
+    // Hapus dari localStorage di frontend
     res.json({
       message: 'Akun Meta Ads berhasil terhubung',
       data: metaAccount,
     });
   } catch (error) {
-    console.error('Meta callback error:', error.response?.data || error.message);
+    console.error('Save meta connection error:', error);
     res.status(500).json({
-      message: 'Gagal menghubungkan akun Meta Ads',
+      message: 'Gagal menyimpan koneksi Meta Ads',
       error: error.message,
     });
   }
@@ -85,7 +161,7 @@ exports.metaCallback = async (req, res) => {
 exports.getCampaigns = async (req, res) => {
   try {
     // Pastikan req.user.id ada (cek di authController saat login/sign token)
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     if (!userId) {
       return res.status(401).json({ message: 'User ID tidak valid. Silakan login ulang.' });
@@ -143,7 +219,7 @@ exports.getCampaigns = async (req, res) => {
       console.warn('Meta API error atau data kosong:', apiError.response?.data || apiError.message);
     }
 
-    // 4. Ambil campaigns dari database (Field name sudah diperbaiki)
+    // 4. Ambil campaigns dari database
     const campaigns = await prisma.campaign.findMany({
       where: {
         metaAccount: {
@@ -153,7 +229,7 @@ exports.getCampaigns = async (req, res) => {
       select: {
         id: true,
         metaCampaignId: true,
-        name: true, // SUDAH DIPERBAIKI (sebelumnya campaignName)
+        name: true,
         status: true,
         spend: true,
         reach: true,
@@ -163,7 +239,7 @@ exports.getCampaigns = async (req, res) => {
 
     res.json({
       message: 'Kampanye berhasil diambil',
-      data: campaigns,
+      campaigns: campaigns,
     });
   } catch (error) {
     console.error('Get campaigns error:', error);
@@ -178,10 +254,10 @@ exports.getCampaigns = async (req, res) => {
 exports.getCampaignInsights = async (req, res) => {
   try {
     const { metaCampaignId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     // Ambil campaign dari database
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await prisma.campaign.findFirst({
       where: { metaCampaignId: metaCampaignId },
       include: {
         metaAccount: true,
@@ -257,10 +333,10 @@ exports.getCampaignInsights = async (req, res) => {
 exports.analyzeCampaign = async (req, res) => {
   try {
     const { metaCampaignId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     // Ambil campaign
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await prisma.campaign.findFirst({
       where: { metaCampaignId: metaCampaignId },
       include: {
         metaAccount: true,
@@ -385,10 +461,10 @@ exports.analyzeCampaign = async (req, res) => {
 exports.getCampaignRecommendations = async (req, res) => {
   try {
     const { metaCampaignId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     // Ambil campaign dengan verifikasi kepemilikan
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await prisma.campaign.findFirst({
       where: { metaCampaignId: metaCampaignId },
       include: {
         metaAccount: true,
