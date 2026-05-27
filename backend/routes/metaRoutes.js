@@ -9,6 +9,8 @@ const {
   getCampaignRecommendations,
   analyzeCampaign,
   saveMetaConnection,
+  disconnectMeta,
+  getConnectedAccount,
 } = require('../controllers/metaController');
 
 
@@ -21,6 +23,12 @@ router.get('/callback', metaCallback);
 
 // simpan koneksi Meta Ads → butuh login
 router.post('/save', verifyToken, saveMetaConnection);
+
+// putus koneksi akun Meta Ads → butuh login
+router.delete('/disconnect', verifyToken, disconnectMeta);
+
+// ambil detail akun Meta Ads yang terhubung → butuh login
+router.get('/account', verifyToken, getConnectedAccount);
 
 // ambil kampanye & insights → butuh login
 router.get('/campaigns', verifyToken, getCampaigns);

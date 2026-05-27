@@ -197,14 +197,14 @@ export function useCheckMetaConnection() {
           return
         }
 
-        const response = await axios.get(`${API_URL}/api/meta/campaigns`, {
+        const response = await axios.get(`${API_URL}/api/meta/account`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
           timeout: 10000,
         })
 
-        const hasConnection = response.data.campaigns && response.data.campaigns.length > 0
+        const hasConnection = response.data && !!response.data.account
         setIsConnected(hasConnection)
         setError(null)
       } catch (err) {

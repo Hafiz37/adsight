@@ -36,7 +36,7 @@ const NAV_ITEMS = [
 ]
 
 // --- SIDEBAR COMPONENT ---
-function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose }) {
+function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose, connectedAccount, onDisconnectMeta }) {
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/60 z-20 lg:hidden" onClick={onClose} />}
@@ -66,6 +66,25 @@ function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose }) {
           })}
         </nav>
         <div className="px-3 py-4 border-t border-gray-800 space-y-1">
+          {/* Akun Meta Terkoneksi (NEW) */}
+          {connectedAccount && (
+            <div className="px-4 py-3 rounded-lg bg-blue-950/20 border border-blue-900/30 mb-2 space-y-1.5">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Meta Ads Terkoneksi</p>
+              <div className="space-y-0.5">
+                <p className="text-xs text-blue-400 font-bold truncate" title={connectedAccount.accountName}>
+                  {connectedAccount.accountName}
+                </p>
+                <p className="text-[9px] text-gray-500 truncate">ID: {connectedAccount.accountId}</p>
+              </div>
+              <button 
+                onClick={onDisconnectMeta}
+                className="mt-1 w-full text-center text-[10px] py-1 bg-red-950/40 hover:bg-red-900/40 text-red-400 rounded-md transition-all cursor-pointer border border-red-900/30 font-medium"
+              >
+                Putus & Ganti Akun
+              </button>
+            </div>
+          )}
+
           <div className="px-4 py-3 rounded-lg bg-gray-800/60 mb-2">
             <p className="text-xs text-gray-500 mb-0.5">Login sebagai</p>
             <p className="text-sm text-gray-200 font-medium truncate">{user?.email || '-'}</p>
@@ -274,11 +293,70 @@ export default function Dashboard() {
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showConnectModal, setShowConnectModal] = useState(false)
+  const [adAccountsToSelect, setAdAccountsToSelect] = useState([])
+  const [pendingAccessToken, setPendingAccessToken] = useState('')
 
   // LIFTED STATES
   const { campaigns, isLoading: campaignsLoading, error: campaignsError } = useFetchCampaigns()
   const { isConnected, isLoading: connectionLoading } = useCheckMetaConnection()
   const [selectedCampaignId, setSelectedCampaignId] = useState('')
+  const [connectedAccount, setConnectedAccount] = useState(null)
+
+  // Fetch Connected Meta Account Details (NEW)
+  useEffect(() => {
+    const fetchMetaAccount = async () => {
+      const token = localStorage.getItem('token')
+      if (!token || !isConnected) {
+        setConnectedAccount(null)
+        return
+      }
+      try {
+        const response = await fetch('http://localhost:5000/api/meta/account', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+        if (response.ok) {
+          const res = await response.json()
+          if (res.account) {
+            setConnectedAccount(res.account)
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching meta account details:', err)
+      }
+    }
+    fetchMetaAccount()
+  }, [isConnected])
+
+  // Disconnect Meta Account Handler (NEW)
+  const handleDisconnectMeta = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin memutuskan koneksi akun Meta Ads ini? Semua riwayat kampanye teranalisis akan dihapus.')) {
+      return
+    }
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    try {
+      const response = await fetch('http://localhost:5000/api/meta/disconnect', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      if (response.ok) {
+        // Reset states dan reload halaman
+        setSelectedCampaignId('')
+        setConnectedAccount(null)
+        window.location.reload()
+      } else {
+        alert('Gagal memutuskan koneksi akun Meta')
+      }
+    } catch (err) {
+      console.error('Error disconnecting meta:', err)
+      alert('Gagal memutuskan koneksi akun Meta')
+    }
+  }
 
   // Derived state untuk auto-select kampanye pertama
   const activeCampaignId = selectedCampaignId || (campaigns.length > 0 ? campaigns[0].metaCampaignId : '')
@@ -293,48 +371,25 @@ export default function Dashboard() {
     }
   }, [connectionLoading, isConnected])
 
-  // Efek untuk menyimpan koneksi Meta Ads jika baru saja redirect dari OAuth
+  // Efek untuk memproses redirect dari OAuth dan menyiapkan pemilih akun iklan
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const metaConnected = params.get('meta_connected');
     
     if (metaConnected === 'true') {
-      const saveConnection = async () => {
+      const accessToken = params.get('accessToken');
+      const adAccountsRaw = params.get('adAccounts');
+      
+      if (accessToken && adAccountsRaw) {
         try {
-          const pending = localStorage.getItem('pendingMetaConnection');
-          if (!pending) return;
-
-          const parsedPending = JSON.parse(pending);
-          const token = localStorage.getItem('token');
-          if (!token) return;
-
-          const response = await fetch('http://localhost:5000/api/meta/save', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              accessToken: parsedPending.accessToken,
-              accountId: parsedPending.accountId,
-              accountName: parsedPending.accountName,
-            }),
-          });
-
-          if (response.ok) {
-            localStorage.removeItem('pendingMetaConnection');
-            navigate('/dashboard', { replace: true });
-            window.location.reload();
-          } else {
-            const errData = await response.json();
-            console.error('Gagal menyimpan koneksi Meta:', errData.message);
-          }
-        } catch (err) {
-          console.error('Error saving Meta connection:', err);
+          const parsedAccounts = JSON.parse(decodeURIComponent(adAccountsRaw));
+          setAdAccountsToSelect(parsedAccounts);
+          setPendingAccessToken(accessToken);
+          setShowConnectModal(true); // Buka modal dalam mode pemilihan akun iklan
+        } catch (e) {
+          console.error('Error parsing adAccounts from URL:', e);
         }
-      };
-
-      saveConnection();
+      }
     }
   }, [navigate]);
 
@@ -417,6 +472,8 @@ export default function Dashboard() {
         user={user} 
         isOpen={sidebarOpen} 
         onClose={() => setSidebarOpen(false)} 
+        connectedAccount={connectedAccount}
+        onDisconnectMeta={handleDisconnectMeta}
       />
       
       <div className="flex-1 flex flex-col min-w-0">
@@ -437,7 +494,13 @@ export default function Dashboard() {
       <ConnectMetaModal 
         isOpen={showConnectModal} 
         onClose={() => setShowConnectModal(false)} 
-        onConnectSuccess={() => { setShowConnectModal(false); window.location.reload() }} 
+        onConnectSuccess={() => { 
+          setShowConnectModal(false); 
+          navigate('/dashboard', { replace: true });
+          window.location.reload();
+        }} 
+        adAccounts={adAccountsToSelect}
+        accessToken={pendingAccessToken}
       />
     </div>
   )

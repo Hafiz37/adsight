@@ -51,34 +51,42 @@ exports.metaCallback = async (req, res) => {
       },
     });
 
-    const accountId = accountResponse.data.id;
-    const accountName = accountResponse.data.name || 'Unknown Account';
+    const userName = accountResponse.data.name || 'Facebook User';
 
-    // ✅ PERBAIKAN: Simpan ke session/cookie untuk diambil user setelah redirect
-    // Atau return data ke frontend untuk disimpan ke localStorage
-    const metaData = {
-      accessToken,
-      accountId: String(accountId),
-      accountName,
-      timestamp: Date.now(),
-    };
+    // Ambil list Ad Accounts yang bisa diakses user
+    let adAccounts = [];
+    try {
+      const adAccountsResponse = await axios.get('https://graph.facebook.com/v18.0/me/adaccounts', {
+        params: {
+          fields: 'id,name,account_id',
+          access_token: accessToken,
+        },
+      });
+      adAccounts = adAccountsResponse.data.data || [];
+    } catch (adError) {
+      console.warn('Gagal mengambil list ad accounts:', adError.message);
+    }
 
-    // Simpan ke session (jika menggunakan express-session)
-    // req.session.pendingMetaConnection = metaData;
+    // Jika user tidak punya ad account bisnis/lainnya, masukkan personal account-nya sebagai opsi
+    if (adAccounts.length === 0) {
+      adAccounts.push({
+        id: `act_${accountResponse.data.id}`,
+        name: `${userName} (Personal Ad Account)`,
+        account_id: accountResponse.data.id,
+      });
+    }
 
-    // ATAU: Return HTML yang auto-redirect dengan data di localStorage
+    // ATAU: Return HTML yang auto-redirect dengan data di URL parameters karena localStorage berbeda origin (localhost:5000 vs localhost:5173)
+    const redirectUrl = `http://localhost:5173/dashboard?meta_connected=true&accessToken=${encodeURIComponent(accessToken)}&adAccounts=${encodeURIComponent(JSON.stringify(adAccounts))}&userName=${encodeURIComponent(userName)}`;
+
     res.send(`
       <!DOCTYPE html>
       <html>
       <head>
         <title>Menghubungkan Meta Ads...</title>
         <script>
-          // Simpan data Meta ke localStorage
-          const metaData = ${JSON.stringify(metaData)};
-          localStorage.setItem('pendingMetaConnection', JSON.stringify(metaData));
-          
-          // Redirect kembali ke dashboard
-          window.location.href = 'http://localhost:5173/dashboard?meta_connected=true';
+          // Redirect kembali ke dashboard dengan data di URL
+          window.location.href = '${redirectUrl}';
         </script>
       </head>
       <body>
@@ -580,6 +588,65 @@ exports.getCampaignRecommendations = async (req, res) => {
     console.error('Get campaign recommendations error:', error);
     res.status(500).json({
       message: 'Gagal mengambil rekomendasi kampanye',
+      error: error.message,
+    });
+  }
+};
+
+// ===== DISCONNECT META ACCOUNT (NEW) =====
+exports.disconnectMeta = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Hapus semua meta account milik user ini (akan cascade delete campaigns & recommendations)
+    const deleteResult = await prisma.metaAccount.deleteMany({
+      where: {
+        userId: userId,
+      },
+    });
+
+    res.json({
+      message: 'Koneksi akun Meta Ads berhasil diputuskan',
+      count: deleteResult.count,
+    });
+  } catch (error) {
+    console.error('Disconnect Meta error:', error);
+    res.status(500).json({
+      message: 'Gagal memutuskan koneksi akun Meta Ads',
+      error: error.message,
+    });
+  }
+};
+
+// ===== GET CONNECTED ACCOUNT (NEW) =====
+exports.getConnectedAccount = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const metaAccount = await prisma.metaAccount.findFirst({
+      where: { userId: userId },
+      select: {
+        id: true,
+        accountId: true,
+        accountName: true,
+        createdAt: true,
+      },
+    });
+
+    if (!metaAccount) {
+      return res.status(404).json({
+        message: 'Belum ada akun Meta Ads yang terhubung',
+      });
+    }
+
+    res.json({
+      message: 'Akun Meta Ads berhasil diambil',
+      account: metaAccount,
+    });
+  } catch (error) {
+    console.error('Get connected account error:', error);
+    res.status(500).json({
+      message: 'Gagal mengambil akun Meta Ads',
       error: error.message,
     });
   }
