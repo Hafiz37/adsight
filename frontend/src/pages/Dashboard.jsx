@@ -9,7 +9,7 @@ import { ErrorAlert, WarningAlert } from '../components/ErrorAlert'
 import { LoadingState, SkeletonCard, SkeletonChart } from '../components/LoadingSpinner'
 import { useFetchCampaigns, useFetchInsights, useCheckMetaConnection } from '../hooks/useFetchInsights'
 
-// Icons
+// --- ICONS (Tetap menggunakan Code 1 karena lebih modern) ---
 const IconDashboard = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
 const IconCampaign = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
 const IconAI = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" /></svg>
@@ -29,7 +29,7 @@ const NAV_ITEMS = [
   { id: 'report', label: 'Laporan', icon: <IconReport /> },
 ]
 
-// Sidebar
+// --- SIDEBAR COMPONENT ---
 function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose }) {
   return (
     <>
@@ -67,42 +67,84 @@ function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose }) {
   )
 }
 
-// PageDashboard (DIUBAH)
-function PageDashboard({ onOpenConnectModal }) {
+// --- PAGE DASHBOARD (GABUNGAN LOGIKA 1 & 2) ---
+function PageDashboard({ onOpenConnectModal, onNavigate }) {
   const { campaigns, isLoading: campaignsLoading, error: campaignsError } = useFetchCampaigns()
   const { isConnected, isLoading: connectionLoading } = useCheckMetaConnection()
-  
   const [selectedCampaignId, setSelectedCampaignId] = useState('')
-  
-  // Menggunakan Derived State untuk auto-select kampanye pertama
-  const activeCampaignId = selectedCampaignId || (campaigns.length > 0 ? campaigns[0].metaCampaignId : '')
-
-  const { data: insightData, isLoading: insightsLoading, error: insightsError } = useFetchInsights(activeCampaignId)
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [dismissedErrors, setDismissedErrors] = useState({})
 
-  // Auto-open modal jika tidak terkoneksi (melalui prop dari parent)
+  // Derived state untuk auto-select kampanye pertama
+  const activeCampaignId = selectedCampaignId || (campaigns.length > 0 ? campaigns[0].metaCampaignId : '')
+  const activeCampaign = campaigns.find(c => c.metaCampaignId === activeCampaignId)
+
+  const { data: insightData, isLoading: insightsLoading, error: insightsError } = useFetchInsights(activeCampaignId)
+
+  // Auto-open modal jika tidak terkoneksi
   useEffect(() => {
     if (!connectionLoading && !isConnected) {
       onOpenConnectModal()
     }
   }, [connectionLoading, isConnected, onOpenConnectModal])
 
-  const getMetricsDisplay = () => {
-    if (!insightData) {
-      return [
-        { label: 'Total Spend', value: '-', unit: 'IDR', icon: <IconSpend /> },
-        { label: 'Rata-rata CTR', value: '-', unit: '%', icon: <IconCTR /> },
-        { label: 'ROAS', value: '-', unit: 'x', icon: <IconROAS /> },
-        { label: 'Total Reach', value: '-', unit: 'orang', icon: <IconReach /> },
-      ]
+  // Fungsi pembantu untuk status (Logika dari Code 2)
+  const getStatusLabel = (type, value) => {
+    if (!value || value === '-') return null;
+    const val = parseFloat(value);
+    if (type === 'CTR') {
+      if (val > 3) return { text: '✅ Bagus', color: 'text-green-400' };
+      if (val > 1) return { text: '⚠️ Cukup', color: 'text-yellow-400' };
+      return { text: '❌ Buruk', color: 'text-red-400' };
     }
+    if (type === 'ROAS') {
+      if (val > 4) return { text: '✅ Bagus', color: 'text-green-400' };
+      if (val > 2) return { text: '⚠️ Cukup', color: 'text-yellow-400' };
+      return { text: '❌ Buruk', color: 'text-red-400' };
+    }
+    return null;
+  }
+
+  const getMetricsDisplay = () => {
+    const defaultMetrics = [
+      { label: 'Total Spend', value: '-', unit: 'IDR', icon: <IconSpend /> },
+      { label: 'Rata-rata CTR', value: '-', unit: '%', icon: <IconCTR />, status: null },
+      { label: 'ROAS', value: '-', unit: 'x', icon: <IconROAS />, status: null },
+      { label: 'Total Reach', value: '-', unit: 'orang', icon: <IconReach /> },
+    ]
+
+    if (!insightData) return defaultMetrics;
+
+    const ctrVal = insightData.ctr ? insightData.ctr.toFixed(2) : '-';
+    const roasVal = insightData.roas ? insightData.roas.toFixed(2) : '-';
 
     return [
-      { label: 'Total Spend', value: insightData.spend ? Math.round(insightData.spend).toLocaleString('id-ID') : '-', unit: 'IDR', icon: <IconSpend /> },
-      { label: 'Rata-rata CTR', value: insightData.ctr ? insightData.ctr.toFixed(2) : '-', unit: '%', icon: <IconCTR /> },
-      { label: 'ROAS', value: insightData.roas ? insightData.roas.toFixed(2) : '-', unit: 'x', icon: <IconROAS /> },
-      { label: 'Total Reach', value: insightData.reach ? Math.round(insightData.reach).toLocaleString('id-ID') : '-', unit: 'orang', icon: <IconReach /> },
+      { 
+        label: 'Total Spend', 
+        value: insightData.spend ? Math.round(insightData.spend).toLocaleString('id-ID') : '-', 
+        unit: 'IDR', 
+        icon: <IconSpend /> 
+      },
+      { 
+        label: 'Rata-rata CTR', 
+        value: ctrVal, 
+        unit: '%', 
+        icon: <IconCTR />,
+        status: getStatusLabel('CTR', ctrVal)
+      },
+      { 
+        label: 'ROAS', 
+        value: roasVal, 
+        unit: 'x', 
+        icon: <IconROAS />,
+        status: getStatusLabel('ROAS', roasVal)
+      },
+      { 
+        label: 'Total Reach', 
+        value: insightData.reach ? Math.round(insightData.reach).toLocaleString('id-ID') : '-', 
+        unit: 'orang', 
+        icon: <IconReach /> 
+      },
     ]
   }
 
@@ -110,9 +152,20 @@ function PageDashboard({ onOpenConnectModal }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Dashboard</h2>
-        <p className="text-gray-400 text-sm mt-1">Ringkasan performa iklan Meta Ads kamu</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Dashboard Analitik</h2>
+          <p className="text-gray-400 text-sm mt-1">Pantau performa kampanye Meta Ads Anda secara real-time</p>
+        </div>
+        {activeCampaignId && (
+          <button 
+            onClick={() => onNavigate('ai')}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-semibold transition-all shadow-lg shadow-violet-600/20"
+          >
+            <IconAI />
+            Lihat Rekomendasi AI
+          </button>
+        )}
       </div>
 
       {campaignsError && !dismissedErrors.campaigns && (
@@ -126,27 +179,48 @@ function PageDashboard({ onOpenConnectModal }) {
       {campaignsLoading && <LoadingState message="Memuat daftar kampanye..." />}
 
       {!campaignsLoading && campaigns.length > 0 && (
-        <FilterBar 
-          selectedCampaignId={activeCampaignId} 
-          onCampaignChange={setSelectedCampaignId} 
-          campaigns={campaigns} 
-          dateRange={dateRange} 
-          onDateRangeChange={setDateRange} 
-          isLoading={campaignsLoading} 
-        />
+        <div className="bg-gray-900/50 p-4 rounded-xl border border-gray-800">
+          <FilterBar 
+            selectedCampaignId={activeCampaignId} 
+            onCampaignChange={setSelectedCampaignId} 
+            campaigns={campaigns} 
+            dateRange={dateRange} 
+            onDateRangeChange={setDateRange} 
+            isLoading={campaignsLoading} 
+          />
+          {activeCampaign && (
+             <p className="text-xs text-gray-500 mt-3 px-1">
+              Status Kampanye: <span className={activeCampaign.status === 'ACTIVE' ? 'text-green-400' : 'text-yellow-400'}>{activeCampaign.status}</span>
+            </p>
+          )}
+        </div>
       )}
 
       {!campaignsLoading && campaigns.length === 0 && !campaignsError && (
-        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-6 text-center space-y-2">
-          <p className="text-sm font-semibold text-blue-400">Belum ada kampanye</p>
-          <p className="text-xs text-gray-400">Buat kampanye di Meta Ads terlebih dahulu, lalu refresh halaman ini.</p>
-          <button onClick={() => window.location.reload()} className="inline-block mt-3 px-4 py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-sm font-medium transition-colors">Refresh Halaman</button>
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-8 text-center space-y-3">
+          <p className="text-lg font-semibold text-blue-400">Belum ada kampanye ditemukan</p>
+          <p className="text-sm text-gray-400">Pastikan akun Meta Ads Anda memiliki kampanye aktif atau coba hubungkan ulang.</p>
+          <button onClick={() => window.location.reload()} className="px-6 py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-sm font-medium transition-colors">Refresh Data</button>
         </div>
       )}
 
       {insightsLoading ? <SkeletonCard count={4} /> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {metrics.map((metric, idx) => <MetricCard key={idx} label={metric.label} value={metric.value} unit={metric.unit} icon={metric.icon} />)}
+          {metrics.map((metric, idx) => (
+            <div key={idx} className="relative group">
+              <MetricCard 
+                label={metric.label} 
+                value={metric.value} 
+                unit={metric.unit} 
+                icon={metric.icon} 
+              />
+              {metric.status && (
+                <div className={`absolute bottom-4 left-6 text-[10px] font-bold uppercase tracking-wider ${metric.status.color}`}>
+                  {metric.status.text}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -159,19 +233,19 @@ function PageDashboard({ onOpenConnectModal }) {
           </div>
         </div>
       ) : (
-        <>
+        <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <PerformanceChart metric="spend" timeRange="7H" isLoading={false} />
             <PerformanceChart metric="ctr" timeRange="7H" isLoading={false} />
           </div>
           <PerformanceChart metric="roas" timeRange="7H" isLoading={false} />
-        </>
+        </div>
       )}
     </div>
   )
 }
 
-// PagePlaceholder
+// --- PAGE PLACEHOLDER ---
 function PagePlaceholder({ title, desc }) {
   return (
     <div className="space-y-4">
@@ -179,14 +253,18 @@ function PagePlaceholder({ title, desc }) {
         <h2 className="text-2xl font-bold text-white">{title}</h2>
         <p className="text-gray-400 text-sm mt-1">{desc}</p>
       </div>
-      <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-12 flex items-center justify-center">
-        <p className="text-gray-600 text-sm">Halaman ini sedang dikembangkan</p>
+      <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-12 flex flex-col items-center justify-center text-center">
+        <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+          <IconAI />
+        </div>
+        <p className="text-gray-400 font-medium">Fitur {title} sedang disiapkan</p>
+        <p className="text-gray-600 text-sm mt-1">Integrasi AI sedang dalam proses pengembangan tahap akhir.</p>
       </div>
     </div>
   )
 }
 
-// Main Dashboard (DIUBAH)
+// --- MAIN DASHBOARD EXPORT ---
 export default function Dashboard() {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
@@ -203,32 +281,49 @@ export default function Dashboard() {
   const renderContent = () => {
     switch (activePage) {
       case 'dashboard':
-        return <PageDashboard onOpenConnectModal={() => setShowConnectModal(true)} />
+        return <PageDashboard onOpenConnectModal={() => setShowConnectModal(true)} onNavigate={setActivePage} />
       case 'campaigns':
-        return <PagePlaceholder title="Kampanye" desc="Daftar kampanye Meta Ads kamu" />
+        return <PagePlaceholder title="Kampanye" desc="Manajemen lengkap kampanye Meta Ads Anda" />
       case 'ai':
-        return <PagePlaceholder title="Rekomendasi AI" desc="Skor kesehatan iklan dan saran optimasi" />
+        return <PagePlaceholder title="Rekomendasi AI" desc="Analisis cerdas dan saran optimasi iklan" />
       case 'report':
-        return <PagePlaceholder title="Laporan" desc="Export laporan PDF satu klik" />
+        return <PagePlaceholder title="Laporan" desc="Export performa iklan ke PDF atau Excel" />
       default:
-        return <PageDashboard onOpenConnectModal={() => setShowConnectModal(true)} />
+        return <PageDashboard onOpenConnectModal={() => setShowConnectModal(true)} onNavigate={setActivePage} />
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-950 flex">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} onLogout={handleLogout} user={user} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar 
+        activePage={activePage} 
+        onNavigate={setActivePage} 
+        onLogout={handleLogout} 
+        user={user} 
+        isOpen={sidebarOpen} 
+        onClose={() => setSidebarOpen(false)} 
+      />
+      
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile Header */}
         <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 sticky top-0 z-10">
           <button onClick={() => setSidebarOpen(true)} className="text-gray-400 hover:text-white"><IconMenu /></button>
           <h1 className="text-base font-bold text-white">Ad<span className="text-violet-400">Sight</span></h1>
           <div className="w-5" />
         </header>
+
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 lg:py-8 overflow-y-auto">
-          {renderContent()}
+          <div className="max-w-7xl mx-auto">
+            {renderContent()}
+          </div>
         </main>
       </div>
-      <ConnectMetaModal isOpen={showConnectModal} onClose={() => setShowConnectModal(false)} onConnectSuccess={() => { setShowConnectModal(false); window.location.reload() }} />
+
+      <ConnectMetaModal 
+        isOpen={showConnectModal} 
+        onClose={() => setShowConnectModal(false)} 
+        onConnectSuccess={() => { setShowConnectModal(false); window.location.reload() }} 
+      />
     </div>
   )
 }

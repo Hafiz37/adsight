@@ -6,8 +6,10 @@ const {
   metaCallback,
   getCampaigns,
   getCampaignInsights,
+  getCampaignRecommendations,
   analyzeCampaign, 
 } = require('../controllers/metaController');
+
 
 // connect → butuh login dulu
 router.get('/connect', verifyToken, connectMeta);
@@ -19,6 +21,9 @@ router.get('/callback', metaCallback);
 // ambil kampanye & insights → butuh login
 router.get('/campaigns', verifyToken, getCampaigns);
 router.get('/campaigns/:metaCampaignId/insights', verifyToken, getCampaignInsights);
+
+
+router.get('/campaigns/:metaCampaignId/recommendations', verifyToken, getCampaignRecommendations);
 
 router.post('/campaigns/:metaCampaignId/analyze', verifyToken, analyzeCampaign); 
 

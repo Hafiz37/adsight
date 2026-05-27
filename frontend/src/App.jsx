@@ -1,25 +1,23 @@
-// frontend/src/App.jsx
-
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import Dashboard from './pages/Dashboard'
-import PrivateRoute from './components/PrivateRoute'
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import PrivateRoute from './components/PrivateRoute';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import Recommendations from './pages/Recommendations';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Redirect dari "/" ke "/login" */}
+        {/* Redirect root ke login */}
         <Route path="/" element={<Navigate to="/login" replace />} />
 
-        {/* Halaman Login */}
+        {/* Public routes */}
         <Route path="/login" element={<Login />} />
-
-        {/* Halaman Register */}
         <Route path="/register" element={<Register />} />
 
-        {/* Halaman Dashboard — dilindungi PrivateRoute */}
+        {/* Protected routes */}
         <Route
           path="/dashboard"
           element={
@@ -28,9 +26,17 @@ function App() {
             </PrivateRoute>
           }
         />
+        <Route
+          path="/recommendations"
+          element={
+            <PrivateRoute>
+              <Recommendations />
+            </PrivateRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
-  )
+  );
 }
 
-export default App
+export default App;
