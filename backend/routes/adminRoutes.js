@@ -132,16 +132,33 @@ router.get("/audit-logs", verifyToken, verifyAdmin, AdminController.getAuditLogs
  */
 router.delete("/audit-logs/cleanup", verifyToken, verifyAdmin, AdminController.cleanupOldAuditLogs);
 
-// ===== CAMPAIGN MONITORING ENDPOINT =====
+// ===== CAMPAIGN MONITORING & DASHBOARD ENDPOINTS =====
 
 /**
- * ENDPOINT 10: GET /api/admin/campaigns/low-score
- * Deskripsi: Mendapatkan kampanye dengan skor rendah (perlu attention)
+ * GET /api/admin/campaigns
+ * Deskripsi: Mendapatkan daftar semua kampanye dengan filter dan pagination
  * Auth: JWT + ADMIN role
- * Query params:
- *   - threshold: skor minimum (default: 40)
- * Response: Array of campaigns dengan skor di bawah threshold
- * Example: GET /api/admin/campaigns/low-score?threshold=50
+ */
+router.get("/campaigns", verifyToken, verifyAdmin, AdminController.getAllCampaigns);
+
+/**
+ * GET /api/admin/campaigns/analytics
+ * Deskripsi: Mendapatkan analisis agregat performa kampanye
+ * Auth: JWT + ADMIN role
+ */
+router.get("/campaigns/analytics", verifyToken, verifyAdmin, AdminController.getCampaignAnalytics);
+
+/**
+ * GET /api/admin/dashboard
+ * Deskripsi: Mendapatkan overview statistik dashboard platform
+ * Auth: JWT + ADMIN role
+ */
+router.get("/dashboard", verifyToken, verifyAdmin, AdminController.getDashboardStats);
+
+/**
+ * GET /api/admin/campaigns/low-score
+ * Deskripsi: Mendapatkan kampanye dengan skor rendah (legacy helper)
+ * Auth: JWT + ADMIN role
  */
 router.get("/campaigns/low-score", verifyToken, verifyAdmin, AdminController.getLowScoreCampaigns);
 

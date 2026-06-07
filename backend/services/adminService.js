@@ -409,11 +409,12 @@ class AdminService {
   }
 
   /**
-   * Mendapatkan daftar audit logs dengan filter
+   * Mendapatkan daftar audit logs dengan filter dan pagination
    */
   static async getAuditLogs(filter = {}) {
     try {
-      const { userId = null, action = null, resourceType = null, limit = 50, offset = 0 } = filter;
+      const { userId = null, action = null, resourceType = null, limit = 50, page = 1 } = filter;
+      const skip = (page - 1) * limit;
 
       const where = {};
       if (userId) where.userId = parseInt(userId);
@@ -433,7 +434,7 @@ class AdminService {
           timestamp: true
         },
         orderBy: { timestamp: "desc" },
-        skip: offset,
+        skip,
         take: limit
       });
 
@@ -444,9 +445,9 @@ class AdminService {
         data: auditLogs,
         pagination: {
           total,
+          page,
           limit,
-          offset,
-          pages: Math.ceil(total / limit)
+          totalPages: Math.ceil(total / limit)
         }
       };
     } catch (error) {
@@ -481,7 +482,307 @@ class AdminService {
   // ===== CAMPAIGN MONITORING =====
 
   /**
-   * Mendapatkan semua kampanye dengan score terendah (perlu attention)
+   * Mendapatkan semua kampanye dengan pagination & filters
+   */
+  static async getAllCampaigns(filter = {}) {
+    try {
+      const {
+        page = 1,
+        limit = 10,
+        search = '',
+        status = '',
+        userId = null,
+        email = '',
+        minSpend = null,
+        maxSpend = null,
+        minRoas = null,
+        maxRoas = null,
+        sortBy = 'createdAt',
+        sortOrder = 'desc'
+      } = filter;
+
+      const skip = (page - 1) * limit;
+      const take = limit;
+
+      const where = {};
+
+      if (search) {
+        where.name = {
+          contains: search
+        };
+      }
+
+      if (status) {
+        where.status = status;
+      }
+
+      if (userId || email) {
+        where.metaAccount = {
+          user: {}
+        };
+        if (userId) {
+          where.metaAccount.user.id = parseInt(userId);
+        }
+        if (email) {
+          where.metaAccount.user.email = {
+            contains: email
+          };
+        }
+      }
+
+      if (minSpend !== null || maxSpend !== null) {
+        where.spend = {};
+        if (minSpend !== null) where.spend.gte = parseFloat(minSpend);
+        if (maxSpend !== null) where.spend.lte = parseFloat(maxSpend);
+      }
+
+      if (minRoas !== null || maxRoas !== null) {
+        where.roas = {};
+        if (minRoas !== null) where.roas.gte = parseFloat(minRoas);
+        if (maxRoas !== null) where.roas.lte = parseFloat(maxRoas);
+      }
+
+      const validSortFields = ['name', 'status', 'spend', 'roas', 'ctr', 'reach', 'date', 'createdAt', 'updatedAt'];
+      const orderByField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+      const orderByOrder = ['asc', 'desc'].includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
+
+      const campaigns = await prisma.campaign.findMany({
+        where,
+        skip,
+        take,
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          spend: true,
+          ctr: true,
+          roas: true,
+          reach: true,
+          date: true,
+          createdAt: true,
+          metaAccount: {
+            select: {
+              id: true,
+              accountName: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true
+                }
+              }
+            }
+          },
+          aiRecommendation: {
+            select: {
+              score: true,
+              label: true
+            }
+          }
+        },
+        orderBy: {
+          [orderByField]: orderByOrder
+        }
+      });
+
+      const total = await prisma.campaign.count({ where });
+
+      return {
+        success: true,
+        data: campaigns,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+    } catch (error) {
+      throw new Error(`Gagal mengambil daftar kampanye: ${error.message}`);
+    }
+  }
+
+  /**
+   * Mendapatkan analisis agregat performa kampanye
+   */
+  static async getCampaignAnalytics(filter = {}) {
+    try {
+      const { status = '', userId = null, email = '' } = filter;
+
+      const where = {};
+      if (status) {
+        where.status = status;
+      }
+      if (userId || email) {
+        where.metaAccount = {
+          user: {}
+        };
+        if (userId) {
+          where.metaAccount.user.id = parseInt(userId);
+        }
+        if (email) {
+          where.metaAccount.user.email = {
+            contains: email
+          };
+        }
+      }
+
+      // Hitung performa agregat keseluruhan kampanye yang difilter
+      const aggregates = await prisma.campaign.aggregate({
+        where,
+        _count: {
+          id: true
+        },
+        _sum: {
+          spend: true,
+          reach: true
+        },
+        _avg: {
+          roas: true,
+          ctr: true
+        }
+      });
+
+      // Breakdown status kampanye
+      const statusCounts = await prisma.campaign.groupBy({
+        where,
+        by: ['status'],
+        _count: {
+          id: true
+        }
+      });
+
+      // Distribusi score rekomendasi AI
+      const scoreDistribution = {
+        excellent: 0, // score >= 80
+        good: 0,      // 60 <= score < 80
+        fair: 0,      // 40 <= score < 60
+        poor: 0       // score < 40
+      };
+
+      const aiScores = await prisma.aiRecommendation.findMany({
+        where: {
+          campaign: where
+        },
+        select: {
+          score: true
+        }
+      });
+
+      aiScores.forEach(rec => {
+        if (rec.score >= 80) scoreDistribution.excellent++;
+        else if (rec.score >= 60) scoreDistribution.good++;
+        else if (rec.score >= 40) scoreDistribution.fair++;
+        else scoreDistribution.poor++;
+      });
+
+      return {
+        success: true,
+        data: {
+          totalCampaigns: aggregates._count.id || 0,
+          totalSpend: aggregates._sum.spend || 0,
+          totalReach: aggregates._sum.reach || 0,
+          averageROAS: aggregates._avg.roas || 0,
+          averageCTR: aggregates._avg.ctr || 0,
+          statusBreakdown: statusCounts.reduce((acc, curr) => {
+            acc[curr.status] = curr._count.id;
+            return acc;
+          }, {}),
+          scoreDistribution
+        }
+      };
+    } catch (error) {
+      throw new Error(`Gagal mengambil analisis kampanye: ${error.message}`);
+    }
+  }
+
+  /**
+   * Mendapatkan overview stats dashboard (users, campaigns, spend, ROAS, dll)
+   */
+  static async getDashboardStats() {
+    try {
+      const totalUsers = await prisma.user.count();
+      const totalCampaigns = await prisma.campaign.count();
+      const activeCampaigns = await prisma.campaign.count({ where: { status: "ACTIVE" } });
+
+      const aggregates = await prisma.campaign.aggregate({
+        _sum: {
+          spend: true
+        },
+        _avg: {
+          roas: true,
+          ctr: true
+        }
+      });
+
+      const totalSpend = aggregates._sum.spend || 0;
+      const averageROAS = aggregates._avg.roas || 0;
+      const averageCTR = aggregates._avg.ctr || 0;
+
+      // Kampanye dengan skor terendah (perlu attention)
+      const lowPerformingCampaigns = await prisma.campaign.findMany({
+        where: {
+          aiRecommendation: {
+            score: { lt: 40 }
+          }
+        },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          spend: true,
+          roas: true,
+          ctr: true,
+          metaAccount: {
+            select: {
+              user: { select: { email: true } }
+            }
+          },
+          aiRecommendation: {
+            select: {
+              score: true,
+              label: true
+            }
+          }
+        },
+        orderBy: {
+          aiRecommendation: { score: "asc" }
+        },
+        take: 5
+      });
+
+      // Audit logs terbaru
+      const recentAuditLogs = await prisma.auditLog.findMany({
+        select: {
+          id: true,
+          user: { select: { email: true } },
+          action: true,
+          resourceType: true,
+          timestamp: true
+        },
+        orderBy: { timestamp: "desc" },
+        take: 5
+      });
+
+      return {
+        success: true,
+        data: {
+          totalUsers,
+          totalCampaigns,
+          activeCampaigns,
+          totalSpend,
+          averageROAS,
+          averageCTR,
+          lowPerformingCampaigns,
+          recentAuditLogs
+        }
+      };
+    } catch (error) {
+      throw new Error(`Gagal mengambil data dashboard: ${error.message}`);
+    }
+  }
+
+  /**
+   * Mendapatkan semua kampanye dengan score terendah (legacy helper)
    */
   static async getLowScoreCampaigns(threshold = 40) {
     try {

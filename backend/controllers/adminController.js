@@ -358,20 +358,49 @@ class AdminController {
 
   /**
    * GET /api/admin/audit-logs
-   * Mendapatkan daftar audit logs dengan filter
-   * Query: ?userId=1&action=LOGIN&limit=50&offset=0
+   * Mendapatkan daftar audit logs dengan filter dan pagination
+   * Query: ?userId=1&action=LOGIN&limit=50&page=1
    */
   static async getAuditLogs(req, res) {
     try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+
+      if (isNaN(page) || page < 1) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'page' harus berupa integer positif"
+        });
+      }
+
+      if (isNaN(limit) || limit < 1) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'limit' harus berupa integer positif"
+        });
+      }
+
       const filter = {
         userId: req.query.userId || null,
         action: req.query.action || null,
         resourceType: req.query.resourceType || null,
-        limit: parseInt(req.query.limit) || 50,
-        offset: parseInt(req.query.offset) || 0
+        limit,
+        page
       };
 
       const result = await AdminService.getAuditLogs(filter);
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        "VIEW_AUDIT_LOGS",
+        "AuditLog",
+        "all",
+        `Melihat daftar audit logs halaman ${page}`,
+        req.ip,
+        req.get("user-agent")
+      );
+
       return res.status(200).json({
         status: "success",
         message: "Audit logs berhasil diambil",
@@ -422,8 +451,142 @@ class AdminController {
   // ===== CAMPAIGN MONITORING =====
 
   /**
+   * GET /api/admin/campaigns
+   * Mendapatkan daftar semua kampanye dengan filter dan pagination
+   */
+  static async getAllCampaigns(req, res) {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+
+      if (isNaN(page) || page < 1) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'page' harus berupa integer positif"
+        });
+      }
+
+      if (isNaN(limit) || limit < 1) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'limit' harus berupa integer positif"
+        });
+      }
+
+      const filter = {
+        page,
+        limit,
+        search: req.query.search || '',
+        status: req.query.status || '',
+        userId: req.query.userId || null,
+        email: req.query.email || '',
+        minSpend: req.query.minSpend !== undefined ? parseFloat(req.query.minSpend) : null,
+        maxSpend: req.query.maxSpend !== undefined ? parseFloat(req.query.maxSpend) : null,
+        minRoas: req.query.minRoas !== undefined ? parseFloat(req.query.minRoas) : null,
+        maxRoas: req.query.maxRoas !== undefined ? parseFloat(req.query.maxRoas) : null,
+        sortBy: req.query.sortBy || 'createdAt',
+        sortOrder: req.query.sortOrder || 'desc'
+      };
+
+      const result = await AdminService.getAllCampaigns(filter);
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        "VIEW_CAMPAIGNS",
+        "Campaign",
+        "all",
+        `Melihat daftar kampanye halaman ${page}`,
+        req.ip,
+        req.get("user-agent")
+      );
+
+      return res.status(200).json({
+        status: "success",
+        message: "Daftar kampanye berhasil diambil",
+        ...result
+      });
+    } catch (error) {
+      return res.status(500).json({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * GET /api/admin/campaigns/analytics
+   * Mendapatkan analisis agregat performa kampanye
+   */
+  static async getCampaignAnalytics(req, res) {
+    try {
+      const filter = {
+        status: req.query.status || '',
+        userId: req.query.userId || null,
+        email: req.query.email || ''
+      };
+
+      const result = await AdminService.getCampaignAnalytics(filter);
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        "VIEW_CAMPAIGN_ANALYTICS",
+        "Campaign",
+        "all",
+        "Melihat analisis performa kampanye",
+        req.ip,
+        req.get("user-agent")
+      );
+
+      return res.status(200).json({
+        status: "success",
+        message: "Analisis performa kampanye berhasil diambil",
+        ...result
+      });
+    } catch (error) {
+      return res.status(500).json({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * GET /api/admin/dashboard
+   * Mendapatkan overview statistik dashboard platform
+   */
+  static async getDashboardStats(req, res) {
+    try {
+      const result = await AdminService.getDashboardStats();
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        "VIEW_DASHBOARD",
+        "Dashboard",
+        "all",
+        "Melihat statistik dashboard admin",
+        req.ip,
+        req.get("user-agent")
+      );
+
+      return res.status(200).json({
+        status: "success",
+        message: "Statistik dashboard berhasil diambil",
+        ...result
+      });
+    } catch (error) {
+      return res.status(500).json({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+
+  /**
    * GET /api/admin/campaigns/low-score
-   * Mendapatkan kampanye dengan skor rendah
+   * Mendapatkan kampanye dengan skor rendah (legacy helper)
    * Query: ?threshold=40
    */
   static async getLowScoreCampaigns(req, res) {
