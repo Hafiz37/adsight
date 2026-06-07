@@ -1,36 +1,80 @@
 // middleware/auth.js
 
 const jwt = require('jsonwebtoken');
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
 
-const verifyToken = (req, res, next) => {
-  // Ambil token dari header Authorization
-  const authHeader = req.headers['authorization'];
-
-  // Format header harus: "Bearer <token>"
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Akses ditolak. Token tidak ditemukan.' });
-  }
-
-  const token = authHeader.split(' ')[1];
-
+/**
+ * Middleware untuk memverifikasi token JWT dan 
+ * memastikan user masih ada di database.
+ */
+const verifyToken = async (req, res, next) => {
   try {
-    // Verifikasi token
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Format: Bearer <token>
+
+    if (!token) {
+      return res.status(401).json({ 
+        status: "error",
+        message: 'Akses ditolak. Token tidak ditemukan.' 
+      });
+    }
+
+    // 1. Verifikasi integritas token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // simpan data user ke request
-    next(); // lanjut ke route handler
+
+    // 2. ✨ Ambil data user terbaru dari database (Fitur Code 2)
+    // Ini memastikan jika user sudah dihapus/diblokir, token tidak bisa dipakai lagi
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true,
+        email: true,
+        role: true // Penting untuk pengecekan admin nanti
+      }
+    });
+
+    if (!user) {
+      return res.status(401).json({ 
+        status: "error",
+        message: 'User sudah tidak terdaftar.' 
+      });
+    }
+
+    // 3. Simpan data user ke request agar bisa dipakai di controller
+    req.user = user;
+    next();
+
   } catch (error) {
-    return res.status(401).json({ message: 'Token tidak valid atau sudah kadaluarsa.' });
+    // Penanganan error yang lebih spesifik (Fitur Code 2)
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ 
+        status: "error", 
+        message: "Token sudah kadaluarsa. Silakan login kembali." 
+      });
+    }
+    
+    return res.status(401).json({ 
+      status: "error",
+      message: 'Token tidak valid.' 
+    });
   }
 };
 
-// Middleware khusus untuk admin saja
+/**
+ * Middleware khusus untuk akses Admin saja (Fitur Code 1)
+ * Digunakan setelah verifyToken
+ */
 const verifyAdmin = (req, res, next) => {
-  verifyToken(req, res, () => {
-    if (req.user.role !== 'ADMIN') {
-      return res.status(403).json({ message: 'Akses ditolak. Hanya untuk admin.' });
-    }
-    next();
-  });
+  // Kita tidak perlu panggil verifyToken di dalam sini lagi,
+  // cukup cek req.user yang sudah diisi oleh middleware sebelumnya.
+  if (!req.user || req.user.role !== 'ADMIN') {
+    return res.status(403).json({ 
+      status: "error",
+      message: 'Akses ditolak. Fitur ini hanya untuk admin.' 
+    });
+  }
+  next();
 };
 
 module.exports = { verifyToken, verifyAdmin };
