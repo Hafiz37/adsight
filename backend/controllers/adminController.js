@@ -8,11 +8,40 @@ class AdminController {
 
   /**
    * GET /api/admin/users
-   * Mendapatkan daftar semua user
+   * Mendapatkan daftar semua user dengan pagination
    */
   static async getAllUsers(req, res) {
     try {
-      const result = await AdminService.getAllUsers();
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+
+      if (isNaN(page) || page < 1) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'page' harus berupa integer positif"
+        });
+      }
+
+      if (isNaN(limit) || limit < 1) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'limit' harus berupa integer positif"
+        });
+      }
+
+      const result = await AdminService.getAllUsers(page, limit);
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        "VIEW_USERS",
+        "User",
+        "all",
+        `Melihat daftar user halaman ${page}`,
+        req.ip,
+        req.get("user-agent")
+      );
+
       return res.status(200).json({
         status: "success",
         message: "Daftar user berhasil diambil",
@@ -27,13 +56,34 @@ class AdminController {
   }
 
   /**
-   * GET /api/admin/users/:userId
-   * Mendapatkan detail user spesifik
+   * GET /api/admin/users/:id
+   * Mendapatkan detail user tertentu
    */
   static async getUserById(req, res) {
     try {
-      const { userId } = req.params;
-      const result = await AdminService.getUserById(userId);
+      const { id } = req.params;
+      const parsedId = parseInt(id);
+
+      if (isNaN(parsedId)) {
+        return res.status(400).json({
+          status: "error",
+          message: "User ID harus berupa integer"
+        });
+      }
+
+      const result = await AdminService.getUserById(parsedId);
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        "VIEW_USER_DETAIL",
+        "User",
+        parsedId,
+        `Melihat detail user dengan ID ${parsedId}`,
+        req.ip,
+        req.get("user-agent")
+      );
+
       return res.status(200).json({
         status: "success",
         message: "Detail user berhasil diambil",
@@ -48,30 +98,38 @@ class AdminController {
   }
 
   /**
-   * PUT /api/admin/users/:userId/role
+   * PUT /api/admin/users/:id/role
    * Update role user (USER atau ADMIN)
    * Body: { newRole: "USER" | "ADMIN" }
    */
   static async updateUserRole(req, res) {
     try {
-      const { userId } = req.params;
+      const { id } = req.params;
+      const parsedId = parseInt(id);
       const { newRole } = req.body;
 
-      if (!newRole) {
+      if (isNaN(parsedId)) {
         return res.status(400).json({
           status: "error",
-          message: "Parameter 'newRole' harus disediakan"
+          message: "User ID harus berupa integer"
         });
       }
 
-      const result = await AdminService.updateUserRole(userId, newRole);
+      if (!newRole || !["USER", "ADMIN"].includes(newRole)) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'newRole' tidak valid. Gunakan 'USER' atau 'ADMIN'"
+        });
+      }
+
+      const result = await AdminService.updateUserRole(parsedId, newRole);
 
       // Log audit
       await AdminService.logAudit(
         req.user.id,
-        "UPDATE_PROFILE",
+        "UPDATE_ROLE",
         "User",
-        userId,
+        parsedId,
         `Role diubah menjadi ${newRole}`,
         req.ip,
         req.get("user-agent")
@@ -90,29 +148,37 @@ class AdminController {
   }
 
   /**
-   * DELETE /api/admin/users/:userId
+   * DELETE /api/admin/users/:id
    * Hapus user dan semua data mereka (HATI-HATI!)
    */
   static async deleteUser(req, res) {
     try {
-      const { userId } = req.params;
+      const { id } = req.params;
+      const parsedId = parseInt(id);
+
+      if (isNaN(parsedId)) {
+        return res.status(400).json({
+          status: "error",
+          message: "User ID harus berupa integer"
+        });
+      }
 
       // Validasi: admin tidak boleh hapus dirinya sendiri
-      if (parseInt(userId) === req.user.id) {
+      if (parsedId === req.user.id) {
         return res.status(400).json({
           status: "error",
           message: "Anda tidak bisa menghapus akun admin Anda sendiri"
         });
       }
 
-      const result = await AdminService.deleteUser(userId);
+      const result = await AdminService.deleteUser(parsedId);
 
       // Log audit
       await AdminService.logAudit(
         req.user.id,
         "DELETE_USER",
         "User",
-        userId,
+        parsedId,
         `User dihapus oleh admin ${req.user.email}`,
         req.ip,
         req.get("user-agent")
@@ -131,23 +197,49 @@ class AdminController {
   }
 
   /**
-   * POST /api/admin/users/:userId/suspend
-   * Suspend user (soft delete)
-   * Body: { reason: "string" }
+   * PUT /api/admin/users/:id/ban
+   * Ban atau suspend user
+   * Body: { isBanned: boolean, reason?: string }
    */
-  static async suspendUser(req, res) {
+  static async banUser(req, res) {
     try {
-      const { userId } = req.params;
-      const { reason = "No reason provided" } = req.body;
+      const { id } = req.params;
+      const parsedId = parseInt(id);
+      const { isBanned, reason = "" } = req.body;
 
-      if (parseInt(userId) === req.user.id) {
+      if (isNaN(parsedId)) {
         return res.status(400).json({
           status: "error",
-          message: "Anda tidak bisa suspend akun Anda sendiri"
+          message: "User ID harus berupa integer"
         });
       }
 
-      const result = await AdminService.suspendUser(userId, reason);
+      if (typeof isBanned !== "boolean") {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'isBanned' harus berupa boolean"
+        });
+      }
+
+      if (parsedId === req.user.id) {
+        return res.status(400).json({
+          status: "error",
+          message: "Anda tidak bisa menangguhkan akun Anda sendiri"
+        });
+      }
+
+      const result = await AdminService.banUser(parsedId, isBanned, reason);
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        isBanned ? "BAN_USER" : "UNBAN_USER",
+        "User",
+        parsedId,
+        isBanned ? `User ditangguhkan. Alasan: ${reason}` : "User diaktifkan kembali",
+        req.ip,
+        req.get("user-agent")
+      );
 
       return res.status(200).json({
         status: "success",
@@ -159,6 +251,64 @@ class AdminController {
         message: error.message
       });
     }
+  }
+
+  /**
+   * POST /api/admin/users/reset-password
+   * Reset password user & send email
+   * Body: { email: string }
+   */
+  static async resetPassword(req, res) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({
+          status: "error",
+          message: "Parameter 'email' wajib disediakan"
+        });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          status: "error",
+          message: "Format email tidak valid"
+        });
+      }
+
+      const result = await AdminService.resetPassword(email);
+
+      // Log audit
+      await AdminService.logAudit(
+        req.user.id,
+        "RESET_PASSWORD",
+        "User",
+        result.data.id,
+        `Password direset oleh admin ${req.user.email}. Email reset terkirim: ${result.emailSent}`,
+        req.ip,
+        req.get("user-agent")
+      );
+
+      return res.status(200).json({
+        status: "success",
+        ...result
+      });
+    } catch (error) {
+      return res.status(400).json({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * POST /api/admin/users/:id/suspend (legacy wrapper)
+   * Body: { reason: "string" }
+   */
+  static async suspendUser(req, res) {
+    req.body.isBanned = true;
+    return this.banUser(req, res);
   }
 
   // ===== ANALYTICS & INSIGHTS =====

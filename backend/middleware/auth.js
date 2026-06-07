@@ -26,11 +26,13 @@ const verifyToken = async (req, res, next) => {
     // 2. ✨ Ambil data user terbaru dari database (Fitur Code 2)
     // Ini memastikan jika user sudah dihapus/diblokir, token tidak bisa dipakai lagi
     const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
+      where: { id: decoded.userId || decoded.id },
       select: {
         id: true,
         email: true,
-        role: true // Penting untuk pengecekan admin nanti
+        role: true, // Penting untuk pengecekan admin nanti
+        isBanned: true,
+        banReason: true
       }
     });
 
@@ -41,8 +43,21 @@ const verifyToken = async (req, res, next) => {
       });
     }
 
+    // Blokir jika user sedang di-ban
+    if (user.isBanned) {
+      return res.status(403).json({
+        status: "error",
+        message: `Akun Anda telah dinonaktifkan/ditangguhkan. Alasan: ${user.banReason || 'Tidak disebutkan'}`
+      });
+    }
+
     // 3. Simpan data user ke request agar bisa dipakai di controller
-    req.user = user;
+    req.user = {
+      id: user.id,
+      userId: user.id,
+      email: user.email,
+      role: user.role
+    };
     next();
 
   } catch (error) {

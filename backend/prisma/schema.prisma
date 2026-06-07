@@ -11,14 +11,19 @@ datasource db {
 // MODEL USER
 // ============================================================
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  email           String   @unique
+  password        String
+  role            Role     @default(USER)
+  isBanned        Boolean  @default(false)
+  banReason       String?
+  bannedAt        DateTime?
+  suspendedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   metaAccounts MetaAccount[]
+  auditLogs    AuditLog[]
 
   @@map("users")
 }
@@ -47,7 +52,6 @@ model MetaAccount {
   @@map("meta_accounts")
 }
 
-
 // ============================================================
 // MODEL CAMPAIGN
 // ============================================================
@@ -72,7 +76,6 @@ model Campaign {
   @@map("campaigns")
 }
 
-
 enum CampaignStatus {
   ACTIVE
   PAUSED
@@ -88,10 +91,35 @@ model AiRecommendation {
   campaignId      Int      @unique
   score           Int
   recommendations Json
+  label           String   @default("Average")
+  color           String   @default("#FFA500")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@map("ai_recommendations")
+}
+
+// ============================================================
+// MODEL AUDIT LOG
+// ============================================================
+model AuditLog {
+  id            Int      @id @default(autoincrement())
+  userId        Int?
+  action        String   // LOGIN, LOGOUT, CREATE, UPDATE, DELETE, BAN, etc
+  resourceType  String   // User, Campaign, MetaAccount, etc
+  resourceId    String
+  description   String   @db.Text
+  ipAddress     String?
+  userAgent     String?
+  statusCode    Int?
+  timestamp     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([timestamp])
 }

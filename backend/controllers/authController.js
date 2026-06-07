@@ -87,6 +87,13 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Email atau password salah.' });
     }
 
+    // 3b. Cek jika user sedang di-ban
+    if (user.isBanned) {
+      return res.status(403).json({
+        message: `Akun Anda telah dinonaktifkan/ditangguhkan. Alasan: ${user.banReason || 'Tidak disebutkan'}`
+      });
+    }
+
     // 4. Buat JWT token
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },

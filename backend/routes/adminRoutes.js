@@ -18,50 +18,69 @@ const verifyAdmin = require("../middleware/verifyAdmin");
 
 /**
  * ENDPOINT 1: GET /api/admin/users
- * Deskripsi: Mendapatkan daftar semua user dengan meta accounts mereka
+ * Deskripsi: Mendapatkan daftar semua user dengan pagination & meta accounts mereka
  * Auth: JWT + ADMIN role
- * Response: Array of users dengan metaAccounts dan campaigns
+ * Response: Paginated list of users
  */
 router.get("/users", verifyToken, verifyAdmin, AdminController.getAllUsers);
 
 /**
- * ENDPOINT 2: GET /api/admin/users/:userId
+ * ENDPOINT 2: GET /api/admin/users/:id
  * Deskripsi: Mendapatkan detail user spesifik dengan audit logs mereka
  * Auth: JWT + ADMIN role
- * Params: userId (integer)
+ * Params: id (integer)
  * Response: User object dengan metaAccounts, campaigns, dan recent auditLogs
  */
-router.get("/users/:userId", verifyToken, verifyAdmin, AdminController.getUserById);
+router.get("/users/:id", verifyToken, verifyAdmin, AdminController.getUserById);
 
 /**
- * ENDPOINT 3: PUT /api/admin/users/:userId/role
+ * ENDPOINT 3: PUT /api/admin/users/:id/role
  * Deskripsi: Update role user (USER → ADMIN atau sebaliknya)
  * Auth: JWT + ADMIN role
- * Params: userId (integer)
+ * Params: id (integer)
  * Body: { newRole: "USER" | "ADMIN" }
  * Response: Updated user object
  */
-router.put("/users/:userId/role", verifyToken, verifyAdmin, AdminController.updateUserRole);
+router.put("/users/:id/role", verifyToken, verifyAdmin, AdminController.updateUserRole);
 
 /**
- * ENDPOINT 4: DELETE /api/admin/users/:userId
+ * ENDPOINT 4: DELETE /api/admin/users/:id
  * Deskripsi: Menghapus user dan semua data relasi mereka (PERMANENT!)
  * Auth: JWT + ADMIN role
- * Params: userId (integer)
+ * Params: id (integer)
  * Response: Deleted user email
  * WARNING: Aksi ini tidak bisa di-undo!
  */
-router.delete("/users/:userId", verifyToken, verifyAdmin, AdminController.deleteUser);
+router.delete("/users/:id", verifyToken, verifyAdmin, AdminController.deleteUser);
 
 /**
- * ENDPOINT 5: POST /api/admin/users/:userId/suspend
- * Deskripsi: Suspend user (soft delete, tidak menghapus data)
+ * ENDPOINT 5: PUT /api/admin/users/:id/ban
+ * Deskripsi: Ban atau suspend user
  * Auth: JWT + ADMIN role
- * Params: userId (integer)
+ * Params: id (integer)
+ * Body: { isBanned: boolean, reason?: string }
+ * Response: Banned user
+ */
+router.put("/users/:id/ban", verifyToken, verifyAdmin, AdminController.banUser);
+
+/**
+ * ENDPOINT 5b: POST /api/admin/users/reset-password
+ * Deskripsi: Reset password user & send email
+ * Auth: JWT + ADMIN role
+ * Body: { email: string }
+ * Response: Confirmation & email result
+ */
+router.post("/users/reset-password", verifyToken, verifyAdmin, AdminController.resetPassword);
+
+/**
+ * ENDPOINT 5c: POST /api/admin/users/:id/suspend (legacy wrapper)
+ * Deskripsi: Suspend user (soft delete)
+ * Auth: JWT + ADMIN role
+ * Params: id (integer)
  * Body: { reason: "string" }
  * Response: Suspended user
  */
-router.post("/users/:userId/suspend", verifyToken, verifyAdmin, AdminController.suspendUser);
+router.post("/users/:id/suspend", verifyToken, verifyAdmin, AdminController.suspendUser);
 
 // ===== ANALYTICS & INSIGHTS ENDPOINTS =====
 

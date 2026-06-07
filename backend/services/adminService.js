@@ -8,26 +8,35 @@ class AdminService {
   // ===== USER MANAGEMENT =====
 
   /**
-   * Mendapatkan daftar semua user dengan meta accounts mereka
+   * Mendapatkan daftar semua user dengan pagination & meta accounts
    */
-  static async getAllUsers() {
+  static async getAllUsers(page = 1, limit = 10) {
     try {
+      const skip = (page - 1) * limit;
+      const take = limit;
+
       const users = await prisma.user.findMany({
+        skip,
+        take,
         select: {
           id: true,
           email: true,
           role: true,
+          isBanned: true,
+          banReason: true,
+          bannedAt: true,
+          suspendedAt: true,
           createdAt: true,
           updatedAt: true,
           metaAccounts: {
             select: {
               id: true,
-              metaAccountName: true,
+              accountName: true,
               createdAt: true,
               campaigns: {
                 select: {
                   id: true,
-                  metaCampaignName: true,
+                  name: true,
                   status: true
                 }
               }
@@ -37,10 +46,17 @@ class AdminService {
         orderBy: { createdAt: "desc" }
       });
 
+      const total = await prisma.user.count();
+
       return {
         success: true,
         data: users,
-        total: users.length
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
       };
     } catch (error) {
       throw new Error(`Gagal mengambil daftar user: ${error.message}`);
@@ -48,7 +64,7 @@ class AdminService {
   }
 
   /**
-   * Mendapatkan detail user spesifik dengan semua relasi
+   * Mendapatkan detail user spesifik dengan semua relasi dan audit logs
    */
   static async getUserById(userId) {
     try {
@@ -58,22 +74,26 @@ class AdminService {
           id: true,
           email: true,
           role: true,
+          isBanned: true,
+          banReason: true,
+          bannedAt: true,
+          suspendedAt: true,
           createdAt: true,
           updatedAt: true,
           metaAccounts: {
             select: {
               id: true,
-              metaAccountName: true,
+              accountName: true,
               createdAt: true,
               campaigns: {
                 select: {
                   id: true,
-                  metaCampaignName: true,
+                  name: true,
                   status: true,
                   aiRecommendation: {
                     select: {
                       score: true,
-                      scoreLabel: true,
+                      label: true,
                       updatedAt: true
                     }
                   }
@@ -90,7 +110,7 @@ class AdminService {
               timestamp: true
             },
             orderBy: { timestamp: "desc" },
-            take: 10 // Ambil 10 log terakhir
+            take: 10
           }
         }
       });
@@ -164,34 +184,93 @@ class AdminService {
   }
 
   /**
-   * Suspend user (soft delete dengan flag)
-   * NOTE: Implementasi ini bisa ditingkatkan dengan menambah field "isActive" di User model
+   * Ban atau suspend user
    */
-  static async suspendUser(userId, reason) {
+  static async banUser(userId, isBanned, reason) {
     try {
-      // Update: ganti role USER dengan status suspend (bisa ditambah field di schema)
       const user = await prisma.user.update({
         where: { id: parseInt(userId) },
         data: {
-          // Placeholder: bisa tambah field "suspendReason" di User model nanti
-          updatedAt: new Date()
+          isBanned: !!isBanned,
+          banReason: isBanned ? reason || "Tidak ada alasan spesifik" : null,
+          bannedAt: isBanned ? new Date() : null,
+          suspendedAt: isBanned ? new Date() : null
         },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          isBanned: true,
+          banReason: true,
+          bannedAt: true,
+          suspendedAt: true
+        }
+      });
+
+      return {
+        success: true,
+        message: `User ${user.email} berhasil ${isBanned ? 'dinonaktifkan/ditangguhkan' : 'diaktifkan kembali'}`,
+        data: user
+      };
+    } catch (error) {
+      throw new Error(`Gagal mengubah status ban user: ${error.message}`);
+    }
+  }
+
+  /**
+   * Suspend user (legacy wrapper)
+   */
+  static async suspendUser(userId, reason) {
+    return this.banUser(userId, true, reason);
+  }
+
+  /**
+   * Reset password user dan kirim email
+   */
+  static async resetPassword(email) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email: email }
+      });
+
+      if (!user) {
+        throw new Error(`User dengan email ${email} tidak ditemukan`);
+      }
+
+      // Generate password sementara sepanjang 8 karakter
+      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let tempPassword = "";
+      for (let i = 0; i < 8; i++) {
+        tempPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      const bcrypt = require('bcryptjs');
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+      const updatedUser = await prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
         select: {
           id: true,
           email: true
         }
       });
 
-      // Log aksi suspend
-      await this.logAudit(0, "SUSPEND_USER", "User", userId.toString(), `User suspended: ${reason}`);
+      // Kirim email
+      const MailService = require("./mailService");
+      const emailResult = await MailService.sendResetPasswordEmail(user.email, tempPassword);
 
       return {
         success: true,
-        message: `User ${user.email} berhasil di-suspend`,
-        data: user
+        message: `Password untuk user ${user.email} berhasil di-reset`,
+        data: updatedUser,
+        tempPassword, // Dikembalikan untuk keperluan testing
+        emailSent: emailResult.sent,
+        emailPreview: emailResult.previewUrl || null
       };
     } catch (error) {
-      throw new Error(`Gagal suspend user: ${error.message}`);
+      throw new Error(`Gagal mereset password: ${error.message}`);
     }
   }
 
@@ -213,7 +292,7 @@ class AdminService {
       const topCampaigns = await prisma.campaign.findMany({
         select: {
           id: true,
-          metaCampaignName: true,
+          name: true,
           metaAccount: {
             select: {
               user: {
@@ -224,7 +303,7 @@ class AdminService {
           aiRecommendation: {
             select: {
               score: true,
-              scoreLabel: true
+              label: true
             }
           }
         },
@@ -311,12 +390,13 @@ class AdminService {
    */
   static async logAudit(userId, action, resourceType, resourceId, description, ipAddress, userAgent) {
     try {
+      const parsedUserId = parseInt(userId);
       await prisma.auditLog.create({
         data: {
-          userId: parseInt(userId) || 0,
+          userId: isNaN(parsedUserId) || parsedUserId === 0 ? null : parsedUserId,
           action,
           resourceType,
-          resourceId,
+          resourceId: String(resourceId),
           description,
           ipAddress: ipAddress || null,
           userAgent: userAgent || null
@@ -413,7 +493,7 @@ class AdminService {
         },
         select: {
           id: true,
-          metaCampaignName: true,
+          name: true,
           metaAccount: {
             select: {
               user: { select: { email: true } }
@@ -422,7 +502,7 @@ class AdminService {
           aiRecommendation: {
             select: {
               score: true,
-              scoreLabel: true,
+              label: true,
               recommendations: true,
               updatedAt: true
             }
