@@ -32,8 +32,12 @@ export default function Login() {
       localStorage.setItem('token', response.data.token)
       localStorage.setItem('user', JSON.stringify(response.data.user))
 
-      // Redirect ke dashboard
-      navigate('/dashboard')
+      // Redirect ke dashboard berdasarkan role
+      if (response.data.user.role === 'ADMIN') {
+        navigate('/admin/dashboard')
+      } else {
+        navigate('/dashboard')
+      }
 
     } catch (err) {
       // Tampilkan pesan error dari backend
