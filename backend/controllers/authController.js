@@ -11,7 +11,12 @@ const prisma = new PrismaClient();
 // =====================
 const register = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    
+    // Normalize email
+    if (email) {
+      email = email.trim().toLowerCase();
+    }
 
     // 1. Validasi input tidak kosong
     if (!email || !password) {
@@ -68,7 +73,12 @@ const register = async (req, res) => {
 // =====================
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    
+    // Normalize email
+    if (email) {
+      email = email.trim().toLowerCase();
+    }
 
     // 1. Validasi input tidak kosong
     if (!email || !password) {
@@ -76,14 +86,19 @@ const login = async (req, res) => {
     }
 
     // 2. Cari user berdasarkan email
+    console.log(`[LOGIN ATTEMPT] Email received: "${email}"`);
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
+      console.log(`[LOGIN FAILED] User not found for email: "${email}"`);
       return res.status(401).json({ message: 'Email atau password salah.' });
     }
 
     // 3. Bandingkan password
+    console.log(`[DEBUG] Comparing received password: "${password}" (length: ${password ? password.length : 0}) with stored hash: "${user.password}"`);
     const isPasswordValid = await bcrypt.compare(password, user.password);
+    console.log(`[LOGIN ATTEMPT] Password valid? ${isPasswordValid}`);
     if (!isPasswordValid) {
+      console.log(`[LOGIN FAILED] Invalid password for email: "${email}"`);
       return res.status(401).json({ message: 'Email atau password salah.' });
     }
 
