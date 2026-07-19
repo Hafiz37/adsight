@@ -3,8 +3,8 @@
 import { useState } from 'react'
 
 // Ikon calendar
-const IconCalendar = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const IconCalendar = ({ className = '' }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
     <line x1="16" y1="2" x2="16" y2="6" />
     <line x1="8" y1="2" x2="8" y2="6" />
@@ -13,8 +13,8 @@ const IconCalendar = () => (
 )
 
 // Ikon dropdown
-const IconChevronDown = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const IconChevronDown = ({ className = '' }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <polyline points="6 9 12 15 18 9" />
   </svg>
 )
@@ -25,6 +25,7 @@ export default function FilterBar({
   campaigns = [],
   dateRange = { start: '', end: '' },
   onDateRangeChange,
+  onResetFilter,
   isLoading = false,
 }) {
   const [showDatePicker, setShowDatePicker] = useState(false)
@@ -41,6 +42,16 @@ export default function FilterBar({
     setTempDateRange({ ...tempDateRange, end: newEnd })
   }
 
+  const getDefaultRange = () => {
+    const end = new Date()
+    const start = new Date()
+    start.setDate(start.getDate() - 6)
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    }
+  }
+
   // Apply filter tanggal
   const handleApplyDateRange = () => {
     if (tempDateRange.start && tempDateRange.end) {
@@ -53,12 +64,16 @@ export default function FilterBar({
     }
   }
 
-  // Reset tanggal
+  // Reset ke 7 hari terakhir
   const handleResetDateRange = () => {
-    setTempDateRange({ start: '', end: '' })
-    onDateRangeChange({ start: '', end: '' })
+    const defaultRange = getDefaultRange()
+    setTempDateRange(defaultRange)
+    onDateRangeChange(defaultRange)
+    if (onResetFilter) onResetFilter()
     setShowDatePicker(false)
   }
+
+  const hasActiveFilter = dateRange.start && dateRange.end
 
   return (
     <div className="space-y-4">
@@ -93,19 +108,29 @@ export default function FilterBar({
           <label className="block text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">
             Range Tanggal
           </label>
-          <button
-            onClick={() => setShowDatePicker(!showDatePicker)}
-            className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm text-left hover:border-gray-600 transition-colors flex items-center gap-2"
-          >
-            <IconCalendar className="text-gray-400" />
-            {dateRange.start && dateRange.end ? (
-              <span>
-                {new Date(dateRange.start).toLocaleDateString('id-ID')} - {new Date(dateRange.end).toLocaleDateString('id-ID')}
-              </span>
-            ) : (
-              <span className="text-gray-500">Pilih range tanggal...</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowDatePicker(!showDatePicker)}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm text-left hover:border-gray-600 transition-colors flex items-center gap-2"
+            >
+              <IconCalendar className="text-gray-400" />
+              {hasActiveFilter ? (
+                <span>
+                  {new Date(dateRange.start).toLocaleDateString('id-ID')} - {new Date(dateRange.end).toLocaleDateString('id-ID')}
+                </span>
+              ) : (
+                <span className="text-gray-500">Pilih range tanggal...</span>
+              )}
+            </button>
+            {hasActiveFilter && (
+              <button
+                onClick={handleResetDateRange}
+                className="px-3 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Hari Ini
+              </button>
             )}
-          </button>
+          </div>
         </div>
 
       </div>
@@ -141,19 +166,29 @@ export default function FilterBar({
           <label className="block text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">
             Range Tanggal
           </label>
-          <button
-            onClick={() => setShowDatePicker(!showDatePicker)}
-            className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm text-left hover:border-gray-600 transition-colors flex items-center gap-2"
-          >
-            <IconCalendar className="text-gray-400" />
-            {dateRange.start && dateRange.end ? (
-              <span className="text-xs">
-                {new Date(dateRange.start).toLocaleDateString('id-ID')} - {new Date(dateRange.end).toLocaleDateString('id-ID')}
-              </span>
-            ) : (
-              <span className="text-gray-500 text-xs">Pilih range tanggal...</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowDatePicker(!showDatePicker)}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm text-left hover:border-gray-600 transition-colors flex items-center gap-2"
+            >
+              <IconCalendar className="text-gray-400" />
+              {hasActiveFilter ? (
+                <span className="text-xs">
+                  {new Date(dateRange.start).toLocaleDateString('id-ID')} - {new Date(dateRange.end).toLocaleDateString('id-ID')}
+                </span>
+              ) : (
+                <span className="text-gray-500 text-xs">Pilih range tanggal...</span>
+              )}
+            </button>
+            {hasActiveFilter && (
+              <button
+                onClick={handleResetDateRange}
+                className="px-3 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Hari Ini
+              </button>
             )}
-          </button>
+          </div>
         </div>
 
       </div>
@@ -193,9 +228,9 @@ export default function FilterBar({
             </button>
             <button
               onClick={handleResetDateRange}
-              className="flex-1 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium transition-colors"
+              className="flex-1 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium transition-colors cursor-pointer"
             >
-              Reset
+              7 Hari
             </button>
             <button
               onClick={() => setShowDatePicker(false)}

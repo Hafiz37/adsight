@@ -6,6 +6,7 @@ const {
   metaCallback,
   getCampaigns,
   getCampaignInsights,
+  getCampaignInsightsHistory,
   getCampaignRecommendations,
   analyzeCampaign,
   saveMetaConnection,
@@ -36,6 +37,7 @@ router.get('/campaigns/:metaCampaignId/insights', verifyToken, getCampaignInsigh
 
 
 router.get('/campaigns/:metaCampaignId/recommendations', verifyToken, getCampaignRecommendations);
+router.get('/campaigns/:metaCampaignId/insights-history', verifyToken, getCampaignInsightsHistory);
 
 router.post('/campaigns/:metaCampaignId/analyze', verifyToken, analyzeCampaign); 
 

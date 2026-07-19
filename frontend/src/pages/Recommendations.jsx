@@ -130,7 +130,7 @@ const Recommendations = () => {
         </nav>
         <div className="border-t border-gray-800 pt-4">
           <button
-            onClick={() => { localStorage.clear(); navigate('/login'); }}
+            onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('user'); navigate('/login'); }}
             className="w-full px-4 py-2 rounded-lg bg-red-900/20 hover:bg-red-900/40 text-red-400 font-semibold transition-colors text-sm"
           >
             🚪 Logout

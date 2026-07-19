@@ -51,10 +51,11 @@ function mapErrorToMessage(error) {
 /**
  * Hook untuk fetch insights 1 kampanye
  */
-export function useFetchInsights(campaignId) {
+export function useFetchInsights(campaignId, dateRange = { start: '', end: '' }) {
   const [data, setData] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [isPaused, setIsPaused] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
@@ -62,6 +63,7 @@ export function useFetchInsights(campaignId) {
       const resetState = () => {
         setData(null)
         setError(null)
+        setIsPaused(false)
         setIsLoading(false)
       }
 
@@ -72,11 +74,18 @@ export function useFetchInsights(campaignId) {
     const fetchInsights = async () => {
       setIsLoading(true)
       setError(null)
+      setIsPaused(false)
 
       try {
         const token = localStorage.getItem('token')
         if (!token) {
           throw new Error('Sesi berakhir. Silakan login kembali.')
+        }
+
+        const params = {}
+        if (dateRange.start && dateRange.end) {
+          params.startDate = dateRange.start
+          params.endDate = dateRange.end
         }
 
         const response = await axios.get(
@@ -85,22 +94,32 @@ export function useFetchInsights(campaignId) {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-            timeout: 10000, // 10 second timeout
+            params,
+            timeout: 10000,
           }
         )
 
-        const insights = response.data.insights
-        if (insights) {
+        const responseData = response.data.data
+        if (responseData?.paused) {
+          setIsPaused(true)
+          setData(null)
+          const msg = !dateRange.start
+            ? 'Kampanye sedang Paused. Gunakan filter tanggal untuk melihat data saat kampanye masih aktif.'
+            : 'Tidak ada data Meta Ads untuk periode yang dipilih pada kampanye ini.'
+          setError(msg)
+        } else if (responseData?.insights) {
           setData({
-            spend: insights.spend || 0,
-            ctr: insights.ctr || 0,
-            roas: insights.roas || 0,
-            reach: insights.reach || 0,
+            spend: responseData.insights.spend || 0,
+            ctr: responseData.insights.ctr || 0,
+            roas: responseData.insights.roas || 0,
+            reach: responseData.insights.reach || 0,
           })
           setError(null)
         } else {
-          // Campaign PAUSED atau insights kosong
-          setError('Campaign mungkin dalam status PAUSED atau belum memiliki data insights.')
+          const errMsg = responseData?.metaError
+            ? `Meta API Error: ${responseData.metaError}`
+            : 'Meta Ads tidak mengembalikan data untuk periode ini.'
+          setError(errMsg)
           setData(null)
         }
       } catch (err) {
@@ -114,13 +133,13 @@ export function useFetchInsights(campaignId) {
     }
 
     fetchInsights()
-  }, [campaignId, retryCount])
+  }, [campaignId, dateRange.start, dateRange.end, retryCount])
 
   const retry = () => {
     setRetryCount((prev) => prev + 1)
   }
 
-  return { data, isLoading, error, retry }
+  return { data, isLoading, error, isPaused, retry }
 }
 
 /**
@@ -224,7 +243,6 @@ export function useCheckMetaConnection() {
 
 /**
  * Hook untuk get historical insights data (untuk grafik)
- * TODO: Implementasi setelah backend support date range parameter
  */
 export function useFetchHistoricalInsights(campaignId, dateRange = null) {
   const [data, setData] = useState([])
@@ -268,8 +286,21 @@ export function useFetchHistoricalInsights(campaignId, dateRange = null) {
           timeout: 10000,
         })
 
-        setData(response.data.history || [])
-        setError(null)
+        const historyData = response.data.history || []
+        setData(historyData)
+        if (response.data.paused) {
+          setError('Kampanye sedang Paused — tidak ada data untuk periode ini. Gunakan filter tanggal untuk melihat data historis.')
+        } else if (historyData.length === 0) {
+          if (response.data.metaError) {
+            setError(`Meta API Error: ${response.data.metaError}`)
+          } else if (response.data.message && response.data.message !== 'Data history dari Meta Ads') {
+            setError(response.data.message)
+          } else {
+            setError('Meta Ads tidak memiliki data untuk periode ini.')
+          }
+        } else {
+          setError(null)
+        }
       } catch (err) {
         console.error('[useFetchHistoricalInsights Error]', err)
         const userMessage = mapErrorToMessage(err)

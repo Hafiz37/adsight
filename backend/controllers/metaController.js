@@ -76,8 +76,8 @@ exports.metaCallback = async (req, res) => {
       });
     }
 
-    // ATAU: Return HTML yang auto-redirect dengan data di URL parameters karena localStorage berbeda origin (localhost:5000 vs localhost:5173)
-    const redirectUrl = `http://localhost:5173/dashboard?meta_connected=true&accessToken=${encodeURIComponent(accessToken)}&adAccounts=${encodeURIComponent(JSON.stringify(adAccounts))}&userName=${encodeURIComponent(userName)}`;
+    // Redirect ke frontend dengan data via URL fragment (aman dari server logs)
+    const redirectUrl = `http://localhost:5173/dashboard#meta_connected=true&accessToken=${encodeURIComponent(accessToken)}&adAccounts=${encodeURIComponent(JSON.stringify(adAccounts))}&userName=${encodeURIComponent(userName)}`;
 
     res.send(`
       <!DOCTYPE html>
@@ -85,12 +85,11 @@ exports.metaCallback = async (req, res) => {
       <head>
         <title>Menghubungkan Meta Ads...</title>
         <script>
-          // Redirect kembali ke dashboard dengan data di URL
           window.location.href = '${redirectUrl}';
         </script>
       </head>
       <body>
-        <p>Menghubungkan akun Meta Ads Anda... Tunggu sebentar...</p>
+        <p>Menghubungkan akun Meta Ads Anda...</p>
       </body>
       </html>
     `);
@@ -192,7 +191,7 @@ exports.getCampaigns = async (req, res) => {
         `https://graph.facebook.com/v18.0/${metaAccount.accountId}/campaigns`, // Pakai accountId sesuai schema
         {
           params: {
-            fields: 'id,name,status,insights.date_preset(last_30d){spend,impressions,clicks,ctr}',
+            fields: 'id,name,status,created_time,insights.date_preset(last_30d){spend,impressions,clicks,ctr,actions,action_values}',
             access_token: metaAccount.accessToken,
           },
         }
@@ -202,8 +201,18 @@ exports.getCampaigns = async (req, res) => {
 
       // 3. Simpan/update campaigns ke database
       for (const campaign of campaignsFromApi) {
+        const insight = campaign.insights?.data?.[0] || {};
+        const rawSpend = parseFloat(insight.spend) || 0;
+        const rawImpressions = parseFloat(insight.impressions) || 0;
+        const rawClicks = parseFloat(insight.clicks) || 0;
+        const rawCtr = parseFloat(insight.ctr) || 0;
+        const rawRevenue = insight.action_values?.[0]?.value
+          ? parseFloat(insight.action_values[0].value)
+          : 0;
+        const rawRoas = rawSpend > 0 ? rawRevenue / rawSpend : 0;
+        const campaignDate = campaign.created_time ? new Date(campaign.created_time) : new Date();
+
         await prisma.campaign.upsert({
-          // Menggunakan unique compound key sesuai schema.prisma
           where: {
             metaAccountId_metaCampaignId: {
               metaAccountId: metaAccount.id,
@@ -212,14 +221,23 @@ exports.getCampaigns = async (req, res) => {
           },
           update: {
             name: campaign.name,
-            status: campaign.status === 'PAUSED' ? 'PAUSED' : 'ACTIVE', // Sesuaikan enum
+            status: campaign.status === 'PAUSED' ? 'PAUSED' : 'ACTIVE',
+            spend: rawSpend,
+            ctr: rawCtr,
+            roas: rawRoas,
+            reach: Math.round(rawImpressions / 1000),
+            date: campaignDate,
           },
           create: {
             metaAccountId: metaAccount.id,
             metaCampaignId: campaign.id,
             name: campaign.name,
             status: campaign.status === 'PAUSED' ? 'PAUSED' : 'ACTIVE',
-            date: new Date(), // WAJIB ada karena di schema tidak opsional
+            spend: rawSpend,
+            ctr: rawCtr,
+            roas: rawRoas,
+            reach: Math.round(rawImpressions / 1000),
+            date: campaignDate,
           },
         });
       }
@@ -227,12 +245,15 @@ exports.getCampaigns = async (req, res) => {
       console.warn('Meta API error atau data kosong:', apiError.response?.data || apiError.message);
     }
 
-    // 4. Ambil campaigns dari database
+    // 4. Ambil campaigns dari database (urutkan dari terbaru)
     const campaigns = await prisma.campaign.findMany({
       where: {
         metaAccount: {
           userId: userId,
         },
+      },
+      orderBy: {
+        date: 'desc',
       },
       select: {
         id: true,
@@ -263,77 +284,84 @@ exports.getCampaignInsights = async (req, res) => {
   try {
     const { metaCampaignId } = req.params;
     const userId = req.user.userId;
+    const { startDate, endDate } = req.query;
 
-    // Ambil campaign dari database
     const campaign = await prisma.campaign.findFirst({
-      where: { metaCampaignId: metaCampaignId },
-      include: {
-        metaAccount: true,
-      },
+      where: { metaCampaignId, metaAccount: { userId } },
+      include: { metaAccount: true },
     });
 
     if (!campaign) {
       return res.status(404).json({ message: 'Kampanye tidak ditemukan' });
     }
 
-    // Verifikasi kepemilikan
-    if (campaign.metaAccount.userId !== userId) {
-      return res.status(403).json({ message: 'Anda tidak memiliki akses ke kampanye ini' });
+    const isPaused = campaign.status === 'PAUSED';
+    const hasDateFilter = !!(startDate && endDate);
+
+    // PAUSED tanpa filter tanggal → langsung return paused
+    if (isPaused && !hasDateFilter) {
+      return res.json({
+        message: 'Kampanye sedang paused. Gunakan filter tanggal untuk melihat data historis.',
+        data: { metaCampaignId, name: campaign.name, status: campaign.status, paused: true, insights: null },
+      });
     }
 
-    // Coba fetch dari Meta API
+    // Tentukan time range — selalu real-time dari Meta API
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    const timeRange = hasDateFilter
+      ? { since: startDate, until: endDate }
+      : { since: start.toISOString().split('T')[0], until: end.toISOString().split('T')[0] };
+
     let insightsData = null;
+    let metaError = null;
     try {
       const insightsResponse = await axios.get(
         `https://graph.facebook.com/v18.0/${metaCampaignId}/insights`,
         {
           params: {
             fields: 'spend,impressions,clicks,ctr,actions,action_values',
-            time_range: {
-              since: '2025-01-01',
-              until: '2025-05-27',
-            },
+            time_range: timeRange,
             access_token: campaign.metaAccount.accessToken,
           },
         }
       );
-
       insightsData = insightsResponse.data.data[0] || null;
     } catch (apiError) {
-      console.warn('Meta API insights error:', apiError.message);
+      metaError = apiError.response?.data?.error?.message || apiError.message;
+      console.warn('Meta API insights error:', metaError);
     }
 
-    // Jika tidak ada data dari API, gunakan data dummy
+    // Jika Meta API gagal/tidak ada data, return error — tidak pakai fallback DB
     if (!insightsData) {
-      insightsData = {
-        spend: 150000,
-        impressions: 45000,
-        clicks: 1800,
-        ctr: '2.5',
-        actions: [
-          { action_type: 'offsite_conversion.fb_pixel_purchase', value: '12' },
-        ],
-        action_values: [
-          { action_type: 'offsite_conversion.fb_pixel_purchase', value: '750000' },
-        ],
-      };
+      return res.json({
+        message: metaError || 'Tidak ada data dari Meta Ads untuk periode ini',
+        data: { metaCampaignId, name: campaign.name, status: campaign.status, paused: isPaused, insights: null, metaError },
+      });
     }
+
+    const rawSpend = parseFloat(insightsData.spend) || 0;
+    const rawImpressions = parseFloat(insightsData.impressions) || 0;
+    const rawCtr = parseFloat(insightsData.ctr) || 0;
+    const rawRevenue = insightsData.action_values?.[0]?.value
+      ? parseFloat(insightsData.action_values[0].value)
+      : 0;
+    const roas = rawSpend > 0 ? rawRevenue / rawSpend : 0;
+    const reach = Math.round(rawImpressions / 1000);
 
     res.json({
-      message: 'Data insights kampanye berhasil diambil',
+      message: 'Data insights dari Meta Ads',
       data: {
-        metaCampaignId: metaCampaignId,
+        metaCampaignId,
         name: campaign.name,
         status: campaign.status,
-        insights: insightsData,
+        insights: { spend: rawSpend, impressions: rawImpressions, ctr: rawCtr, roas: roas, reach },
       },
     });
   } catch (error) {
     console.error('Get campaign insights error:', error);
-    res.status(500).json({
-      message: 'Gagal mengambil insights kampanye',
-      error: error.message,
-    });
+    res.status(500).json({ message: 'Gagal mengambil insights kampanye', error: error.message });
   }
 };
 
@@ -343,35 +371,28 @@ exports.analyzeCampaign = async (req, res) => {
     const { metaCampaignId } = req.params;
     const userId = req.user.userId;
 
-    // Ambil campaign
     const campaign = await prisma.campaign.findFirst({
-      where: { metaCampaignId: metaCampaignId },
-      include: {
-        metaAccount: true,
-      },
+      where: { metaCampaignId, metaAccount: { userId } },
+      include: { metaAccount: true },
     });
 
     if (!campaign) {
       return res.status(404).json({ message: 'Kampanye tidak ditemukan' });
     }
 
-    // Verifikasi kepemilikan
-    if (campaign.metaAccount.userId !== userId) {
-      return res.status(403).json({ message: 'Anda tidak memiliki akses ke kampanye ini' });
-    }
-
     // Fetch insights dari Meta API
     let insightsData = null;
+    let usingDummy = false;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
     try {
       const insightsResponse = await axios.get(
         `https://graph.facebook.com/v18.0/${metaCampaignId}/insights`,
         {
           params: {
             fields: 'spend,impressions,clicks,ctr,actions,action_values',
-            time_range: {
-              since: '2025-01-01',
-              until: '2025-05-27',
-            },
+            time_range: { since: start.toISOString().split('T')[0], until: end.toISOString().split('T')[0] },
             access_token: campaign.metaAccount.accessToken,
           },
         }
@@ -379,23 +400,23 @@ exports.analyzeCampaign = async (req, res) => {
 
       insightsData = insightsResponse.data.data[0] || null;
     } catch (apiError) {
-      console.warn('Meta API error, using dummy data:', apiError.message);
+      console.warn('Meta API error:', apiError.message);
     }
 
-    // Gunakan dummy data jika API gagal
     if (!insightsData) {
-      insightsData = {
-        spend: 150000,
-        impressions: 45000,
-        clicks: 1800,
-        ctr: '2.5',
-        actions: [
-          { action_type: 'offsite_conversion.fb_pixel_purchase', value: '12' },
-        ],
-        action_values: [
-          { action_type: 'offsite_conversion.fb_pixel_purchase', value: '750000' },
-        ],
-      };
+      if (campaign.spend > 0) {
+        insightsData = {
+          spend: campaign.spend,
+          impressions: campaign.reach > 0 ? campaign.reach * 1000 : 0,
+          clicks: 0,
+          ctr: campaign.ctr,
+          actions: [],
+          action_values: campaign.roas > 0 ? [{ action_type: 'offsite_conversion.fb_pixel_purchase', value: String(campaign.roas * campaign.spend) }] : [],
+        };
+        usingDummy = true;
+      } else {
+        return res.status(400).json({ message: 'Meta API tidak dapat dijangkau dan tidak ada data tersimpan untuk kampanye ini.', usingDummy });
+      }
     }
 
     // Hitung metrik
@@ -471,21 +492,13 @@ exports.getCampaignRecommendations = async (req, res) => {
     const { metaCampaignId } = req.params;
     const userId = req.user.userId;
 
-    // Ambil campaign dengan verifikasi kepemilikan
     const campaign = await prisma.campaign.findFirst({
-      where: { metaCampaignId: metaCampaignId },
-      include: {
-        metaAccount: true,
-        aiRecommendation: true,
-      },
+      where: { metaCampaignId, metaAccount: { userId } },
+      include: { metaAccount: true, aiRecommendation: true },
     });
 
     if (!campaign) {
       return res.status(404).json({ message: 'Kampanye tidak ditemukan' });
-    }
-
-    if (campaign.metaAccount.userId !== userId) {
-      return res.status(403).json({ message: 'Anda tidak memiliki akses ke kampanye ini' });
     }
 
     // Jika belum ada AI recommendation, lakukan analisis otomatis
@@ -494,16 +507,16 @@ exports.getCampaignRecommendations = async (req, res) => {
     if (!recommendation) {
       // Fetch insights
       let insightsData = null;
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
       try {
         const insightsResponse = await axios.get(
           `https://graph.facebook.com/v18.0/${metaCampaignId}/insights`,
           {
             params: {
               fields: 'spend,impressions,clicks,ctr,actions,action_values',
-              time_range: {
-                since: '2025-01-01',
-                until: '2025-05-27',
-              },
+              time_range: { since: start.toISOString().split('T')[0], until: end.toISOString().split('T')[0] },
               access_token: campaign.metaAccount.accessToken,
             },
           }
@@ -513,15 +526,14 @@ exports.getCampaignRecommendations = async (req, res) => {
         console.warn('Meta API error:', apiError.message);
       }
 
-      // Gunakan dummy data
-      if (!insightsData) {
+      if (!insightsData && campaign.spend > 0) {
         insightsData = {
-          spend: 150000,
-          impressions: 45000,
-          clicks: 1800,
-          ctr: '2.5',
-          actions: [{ action_type: 'offsite_conversion.fb_pixel_purchase', value: '12' }],
-          action_values: [{ action_type: 'offsite_conversion.fb_pixel_purchase', value: '750000' }],
+          spend: campaign.spend,
+          impressions: campaign.reach > 0 ? campaign.reach * 1000 : 0,
+          clicks: 0,
+          ctr: campaign.ctr,
+          actions: [],
+          action_values: campaign.roas > 0 ? [{ action_type: 'offsite_conversion.fb_pixel_purchase', value: String(campaign.roas * campaign.spend) }] : [],
         };
       }
 
@@ -615,6 +627,128 @@ exports.disconnectMeta = async (req, res) => {
       message: 'Gagal memutuskan koneksi akun Meta Ads',
       error: error.message,
     });
+  }
+};
+
+// ===== GET CAMPAIGN INSIGHTS HISTORY (daily breakdown untuk grafik) =====
+exports.getCampaignInsightsHistory = async (req, res) => {
+  try {
+    const { metaCampaignId } = req.params;
+    const userId = req.user.userId;
+    let { startDate, endDate } = req.query;
+
+    const campaign = await prisma.campaign.findFirst({
+      where: { metaCampaignId, metaAccount: { userId } },
+      include: { metaAccount: true },
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ message: 'Kampanye tidak ditemukan' });
+    }
+
+    // Default: 7 hari terakhir
+    if (!startDate || !endDate) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 6);
+      startDate = start.toISOString().split('T')[0];
+      endDate = end.toISOString().split('T')[0];
+    }
+
+    let dailyData = [];
+    let metaError = null;
+
+    // Tahap 1: daily breakdown
+    try {
+      const resp = await axios.get(`https://graph.facebook.com/v18.0/${metaCampaignId}/insights`, {
+        params: {
+          fields: 'spend,impressions,clicks,ctr,actions,action_values',
+          time_range: { since: startDate, until: endDate },
+          time_increment: 1,
+          access_token: campaign.metaAccount.accessToken,
+        },
+      });
+
+      const rows = resp.data.data || [];
+      const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+      for (const row of rows) {
+        const spend = parseFloat(row.spend) || 0;
+        const impressions = parseFloat(row.impressions) || 0;
+        const ctr = parseFloat(row.ctr) || 0;
+        const revenue = row.action_values?.[0]?.value ? parseFloat(row.action_values[0].value) : 0;
+        const roas = spend > 0 ? revenue / spend : 0;
+
+        dailyData.push({
+          day: dayNames[new Date(row.date_start).getDay()],
+          date: row.date_start,
+          spend: Math.round(spend),
+          ctr: parseFloat(ctr.toFixed(2)),
+          roas: parseFloat(roas.toFixed(2)),
+        });
+      }
+    } catch (apiError) {
+      metaError = apiError.response?.data?.error?.message || apiError.message;
+      console.warn('Meta API daily breakdown error:', metaError);
+    }
+
+    // Tahap 2: jika daily kosong, coba aggregate
+    if (dailyData.length === 0) {
+      try {
+        const aggResp = await axios.get(`https://graph.facebook.com/v18.0/${metaCampaignId}/insights`, {
+          params: {
+            fields: 'spend,impressions,clicks,ctr,actions,action_values',
+            time_range: { since: startDate, until: endDate },
+            access_token: campaign.metaAccount.accessToken,
+          },
+        });
+
+        const agg = aggResp.data.data?.[0];
+        if (agg && parseFloat(agg.spend) > 0) {
+          const totalSpend = parseFloat(agg.spend) || 0;
+          const avgCtr = parseFloat(agg.ctr) || 0;
+          const revenue = agg.action_values?.[0]?.value ? parseFloat(agg.action_values[0].value) : 0;
+          const avgRoas = totalSpend > 0 ? revenue / totalSpend : 0;
+
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const totalDays = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
+          const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            dailyData.push({
+              day: dayNames[d.getDay()],
+              date: d.toISOString().split('T')[0],
+              spend: Math.round(totalSpend / totalDays),
+              ctr: avgCtr,
+              roas: avgRoas,
+            });
+          }
+          metaError = null;
+        }
+      } catch (aggError) {
+        if (!metaError) metaError = aggError.response?.data?.error?.message || aggError.message;
+        console.warn('Meta API aggregate error:', metaError);
+      }
+    }
+
+    dailyData.sort((a, b) => a.date.localeCompare(b.date));
+
+    const isPaused = campaign.status === 'PAUSED';
+
+    res.json({
+      message: dailyData.length > 0
+        ? 'Data history dari Meta Ads'
+        : isPaused
+          ? 'Kampanye sedang Paused — tidak ada data untuk periode ini.'
+          : metaError || 'Tidak ada data untuk periode yang dipilih',
+      history: dailyData,
+      metaError: dailyData.length === 0 ? metaError : null,
+      paused: dailyData.length === 0 && isPaused,
+    });
+  } catch (error) {
+    console.error('Get campaign insights history error:', error);
+    res.status(500).json({ message: 'Gagal mengambil data history kampanye', error: error.message });
   }
 };
 

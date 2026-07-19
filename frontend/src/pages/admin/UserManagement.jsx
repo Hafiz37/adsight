@@ -177,12 +177,37 @@ export default function UserManagement() {
     
     try {
       await adminService.deleteUser(user.id);
-      alert(`User ${user.email} berhasil dihapus.`);
-      setSelectedUser(null); // Close modal
-      fetchUsers(1); // Refresh table from page 1
+      setModalSuccess(`User ${user.email} berhasil dihapus.`);
+      setSelectedUser(null);
+      setModalLoading(false);
+      fetchUsers(1);
     } catch (err) {
       console.error(err);
       setModalError(err.response?.data?.message || 'Gagal menghapus user.');
+      setModalLoading(false);
+    }
+  };
+
+  const handleRoleChange = async (user) => {
+    const newRole = user.role === 'ADMIN' ? 'USER' : 'ADMIN';
+    const action = newRole === 'ADMIN' ? 'menaikkan' : 'menurunkan';
+    if (!window.confirm(`Yakin ingin ${action} role ${user.email} menjadi ${newRole}?`)) return;
+
+    setModalLoading(true);
+    setModalError('');
+    setModalSuccess('');
+
+    try {
+      const response = await adminService.updateUserRole(user.id, newRole);
+      if (response.success) {
+        setModalSuccess(`Role ${user.email} berhasil diubah menjadi ${newRole}.`);
+        setSelectedUser(prev => ({ ...prev, role: newRole }));
+        fetchUsers(pagination.page);
+      }
+    } catch (err) {
+      console.error(err);
+      setModalError(err.response?.data?.message || 'Gagal mengubah role user.');
+    } finally {
       setModalLoading(false);
     }
   };
@@ -192,7 +217,7 @@ export default function UserManagement() {
       {/* Page Title */}
       <div>
         <h2 className="text-2xl font-bold text-white">User Management</h2>
-        <p className="text-gray-400 text-sm mt-1">Kelola data pengguna, perbarui password, suspen akun, atau hapus data secara permanen</p>
+        <p className="text-gray-400 text-sm mt-1">Kelola data pengguna, atur role, perbarui password, suspen akun, atau hapus data secara permanen</p>
       </div>
 
       {/* Filter and Search Bar */}
@@ -283,7 +308,12 @@ export default function UserManagement() {
                 {users.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-850/20 transition-colors">
                     <td className="py-4 px-6 font-mono text-xs text-gray-450">{u.id}</td>
-                    <td className="py-4 px-6 font-semibold text-gray-150">{u.email}</td>
+                    <td className="py-4 px-6 font-semibold text-gray-150">
+                        {u.email}
+                        {u.email === currentUser.email && (
+                          <span className="ml-2 px-1.5 py-0.5 text-[10px] rounded bg-violet-600/20 text-violet-400 border border-violet-500/30 font-bold uppercase tracking-wider">Anda</span>
+                        )}
+                      </td>
                     <td className="py-4 px-6">
                       <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
                         u.role === 'ADMIN' 
@@ -498,6 +528,20 @@ export default function UserManagement() {
                         }`}
                       >
                         {selectedUser.isBanned ? 'Aktifkan User (Unban)' : 'Tangguhkan User (Ban)'}
+                      </button>
+                    )}
+
+                    {currentUser.email !== selectedUser.email && (
+                      <button
+                        onClick={() => handleRoleChange(selectedUser)}
+                        disabled={modalLoading}
+                        className={`px-4 py-2 rounded-xl text-xs font-semibold border disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer ${
+                          selectedUser.role === 'ADMIN'
+                            ? 'bg-blue-600/20 hover:bg-blue-500/20 text-blue-400 border-blue-500/25'
+                            : 'bg-violet-600/20 hover:bg-violet-500/20 text-violet-400 border-violet-500/25'
+                        }`}
+                      >
+                        {selectedUser.role === 'ADMIN' ? 'Turunkan ke User' : 'Jadikan Admin'}
                       </button>
                     )}
                   </div>

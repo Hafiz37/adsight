@@ -263,9 +263,8 @@ class AdminService {
 
       return {
         success: true,
-        message: `Password untuk user ${user.email} berhasil di-reset`,
+        message: `Password untuk user ${user.email} berhasil di-reset. Email reset telah dikirim.`,
         data: updatedUser,
-        tempPassword, // Dikembalikan untuk keperluan testing
         emailSent: emailResult.sent,
         emailPreview: emailResult.previewUrl || null
       };

@@ -96,11 +96,8 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* Quick Actions & Low Performance Campaigns */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Low-performing campaigns */}
-        <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+      {/* Low Performance Campaigns */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <span className="text-red-400"><IconAlert /></span>
@@ -139,36 +136,6 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
-
-        {/* Quick Actions */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
-          <h3 className="text-base font-bold text-white">Aksi Cepat</h3>
-          <div className="flex flex-col gap-2.5">
-            <Link 
-              to="/admin/users" 
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-800 hover:bg-gray-750 border border-gray-750 hover:border-gray-700 rounded-xl text-sm font-semibold text-gray-200 transition-all group"
-            >
-              Kelola Pengguna
-              <span className="text-violet-400 group-hover:translate-x-1 transition-transform">&rarr;</span>
-            </Link>
-            <Link 
-              to="/admin/campaigns" 
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-800 hover:bg-gray-750 border border-gray-750 hover:border-gray-700 rounded-xl text-sm font-semibold text-gray-200 transition-all group"
-            >
-              Pantau Kampanye Iklan
-              <span className="text-violet-400 group-hover:translate-x-1 transition-transform">&rarr;</span>
-            </Link>
-            <Link 
-              to="/admin/audit-logs" 
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-800 hover:bg-gray-750 border border-gray-750 hover:border-gray-700 rounded-xl text-sm font-semibold text-gray-200 transition-all group"
-            >
-              Log Audit Aktivitas
-              <span className="text-violet-400 group-hover:translate-x-1 transition-transform">&rarr;</span>
-            </Link>
-          </div>
-        </div>
-
-      </div>
 
       {/* Recent Audit Logs */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">

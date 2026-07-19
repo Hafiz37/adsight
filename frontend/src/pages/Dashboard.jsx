@@ -1,6 +1,6 @@
 // frontend/src/pages/Dashboard.jsx
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import MetricCard from '../components/MetricCard'
 import PerformanceChart from '../components/PerformanceChart'
 import FilterBar from '../components/FilterBar'
@@ -8,7 +8,8 @@ import ConnectMetaModal from '../components/ConnectMetaModal'
 import ExportPDFButton from '../components/ExportPDFButton'
 import { ErrorAlert, WarningAlert } from '../components/ErrorAlert'
 import { LoadingState, SkeletonCard, SkeletonChart } from '../components/LoadingSpinner'
-import { useFetchCampaigns, useFetchInsights, useCheckMetaConnection } from '../hooks/useFetchInsights'
+import ErrorBoundary from '../components/ErrorBoundary'
+import { useFetchCampaigns, useFetchInsights, useFetchHistoricalInsights, useCheckMetaConnection } from '../hooks/useFetchInsights'
 
 // Import Halaman Tab Baru
 import PageCampaigns from '../components/PageCampaigns'
@@ -90,6 +91,18 @@ function Sidebar({ activePage, onNavigate, onLogout, user, isOpen, onClose, conn
             <p className="text-sm text-gray-200 font-medium truncate">{user?.email || '-'}</p>
             <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">{user?.role || 'USER'}</span>
           </div>
+          {user?.role === 'ADMIN' && (
+            <Link
+              to="/admin/dashboard"
+              className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all mb-1"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              Admin Portal
+            </Link>
+          )}
           <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all">
             <IconLogout />
             Keluar
@@ -110,12 +123,20 @@ function PageDashboard({
   insightData, 
   insightsLoading, 
   insightsError, 
+  isPaused,
+  historyData,
+  historyLoading,
+  historyError,
   selectedCampaignId, 
   setSelectedCampaignId, 
+  dateRange,
+  onDateRangeChange,
+  onResetFilter,
+  timeRange,
+  onTimeRangeChange,
   onNavigate 
 }) {
   const navigate = useNavigate()
-  const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [dismissedErrors, setDismissedErrors] = useState({})
 
   const getStatusLabel = (type, value) => {
@@ -226,7 +247,8 @@ function PageDashboard({
             onCampaignChange={setSelectedCampaignId} 
             campaigns={campaigns} 
             dateRange={dateRange} 
-            onDateRangeChange={setDateRange} 
+            onDateRangeChange={onDateRangeChange} 
+            onResetFilter={onResetFilter}
             isLoading={campaignsLoading} 
           />
           {activeCampaign && (
@@ -234,6 +256,13 @@ function PageDashboard({
               Status Kampanye: <span className={activeCampaign.status === 'ACTIVE' ? 'text-green-400' : 'text-yellow-400'}>{activeCampaign.status}</span>
             </p>
           )}
+        </div>
+      )}
+
+      {isPaused && !dateRange.start && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-8 text-center space-y-3">
+          <p className="text-lg font-semibold text-yellow-400">Kampanye Sedang Paused</p>
+          <p className="text-sm text-gray-400">Kampanye ini sedang dijeda. Gunakan filter tanggal di atas untuk melihat data historis saat kampanye masih aktif.</p>
         </div>
       )}
 
@@ -265,7 +294,7 @@ function PageDashboard({
         </div>
       )}
 
-      {insightsLoading ? (
+      {historyLoading ? (
         <div className="space-y-4">
           <SkeletonChart />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -274,13 +303,15 @@ function PageDashboard({
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <PerformanceChart metric="spend" timeRange="7H" isLoading={false} />
-            <PerformanceChart metric="ctr" timeRange="7H" isLoading={false} />
+        <ErrorBoundary>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <PerformanceChart metric="spend" data={historyData} timeRange={timeRange} onTimeRangeChange={onTimeRangeChange} isLoading={false} error={historyError} />
+              <PerformanceChart metric="ctr" data={historyData} timeRange={timeRange} onTimeRangeChange={onTimeRangeChange} isLoading={false} error={historyError} />
+            </div>
+            <PerformanceChart metric="roas" data={historyData} timeRange={timeRange} onTimeRangeChange={onTimeRangeChange} isLoading={false} error={historyError} />
           </div>
-          <PerformanceChart metric="roas" timeRange="7H" isLoading={false} />
-        </div>
+        </ErrorBoundary>
       )}
     </div>
   )
@@ -301,6 +332,8 @@ export default function Dashboard() {
   const { isConnected, isLoading: connectionLoading } = useCheckMetaConnection()
   const [selectedCampaignId, setSelectedCampaignId] = useState('')
   const [connectedAccount, setConnectedAccount] = useState(null)
+  const [dateRange, setDateRange] = useState({ start: '', end: '' })
+  const [timeRange, setTimeRange] = useState('7H')
 
   // Fetch Connected Meta Account Details (NEW)
   useEffect(() => {
@@ -362,7 +395,24 @@ export default function Dashboard() {
   const activeCampaignId = selectedCampaignId || (campaigns.length > 0 ? campaigns[0].metaCampaignId : '')
   const activeCampaign = campaigns.find(c => c.metaCampaignId === activeCampaignId)
 
-  const { data: insightData, isLoading: insightsLoading, error: insightsError } = useFetchInsights(activeCampaignId)
+  const { data: insightData, isLoading: insightsLoading, error: insightsError, isPaused } = useFetchInsights(activeCampaignId, dateRange)
+  const { data: historyData, isLoading: historyLoading, error: historyError } = useFetchHistoricalInsights(activeCampaignId, dateRange)
+
+  const handleTimeRangeChange = (range) => {
+    const end = new Date()
+    const start = new Date()
+    const days = range === '30H' ? 29 : range === '90H' ? 89 : 6
+    start.setDate(start.getDate() - days)
+    setTimeRange(range)
+    setDateRange({
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    })
+  }
+
+  const handleResetFilter = () => {
+    handleTimeRangeChange('7H')
+  }
 
   // Auto-open modal jika tidak terkoneksi
   useEffect(() => {
@@ -373,25 +423,27 @@ export default function Dashboard() {
 
   // Efek untuk memproses redirect dari OAuth dan menyiapkan pemilih akun iklan
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.replace('#', '');
+    const params = new URLSearchParams(hash);
     const metaConnected = params.get('meta_connected');
-    
+
     if (metaConnected === 'true') {
       const accessToken = params.get('accessToken');
       const adAccountsRaw = params.get('adAccounts');
-      
+
       if (accessToken && adAccountsRaw) {
         try {
           const parsedAccounts = JSON.parse(decodeURIComponent(adAccountsRaw));
           setAdAccountsToSelect(parsedAccounts);
           setPendingAccessToken(accessToken);
-          setShowConnectModal(true); // Buka modal dalam mode pemilihan akun iklan
+          setShowConnectModal(true);
         } catch (e) {
           console.error('Error parsing adAccounts from URL:', e);
         }
       }
+      window.location.hash = '';
     }
-  }, [navigate]);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token')
@@ -412,8 +464,17 @@ export default function Dashboard() {
             insightData={insightData}
             insightsLoading={insightsLoading}
             insightsError={insightsError}
+            isPaused={isPaused}
+            historyData={historyData}
+            historyLoading={historyLoading}
+            historyError={historyError}
             selectedCampaignId={selectedCampaignId}
             setSelectedCampaignId={setSelectedCampaignId}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            onResetFilter={handleResetFilter}
+            timeRange={timeRange}
+            onTimeRangeChange={handleTimeRangeChange}
             onNavigate={setActivePage}
             onOpenConnectModal={() => setShowConnectModal(true)}
           />
@@ -454,8 +515,17 @@ export default function Dashboard() {
             insightData={insightData}
             insightsLoading={insightsLoading}
             insightsError={insightsError}
+            isPaused={isPaused}
+            historyData={historyData}
+            historyLoading={historyLoading}
+            historyError={historyError}
             selectedCampaignId={selectedCampaignId}
             setSelectedCampaignId={setSelectedCampaignId}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            onResetFilter={handleResetFilter}
+             timeRange={timeRange}
+            onTimeRangeChange={handleTimeRangeChange}
             onNavigate={setActivePage}
             onOpenConnectModal={() => setShowConnectModal(true)}
           />
@@ -496,7 +566,6 @@ export default function Dashboard() {
         onClose={() => setShowConnectModal(false)} 
         onConnectSuccess={() => { 
           setShowConnectModal(false); 
-          navigate('/dashboard', { replace: true });
           window.location.reload();
         }} 
         adAccounts={adAccountsToSelect}

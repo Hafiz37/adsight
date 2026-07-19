@@ -72,6 +72,14 @@ export const adminService = {
     return response.data;
   },
 
+  // Role management
+  updateUserRole: async (id, newRole) => {
+    const response = await axios.put(`${API_URL}/api/admin/users/${id}/role`, { newRole }, {
+      headers: getAuthHeaders()
+    });
+    return response.data;
+  },
+
   // Audit Logs
   getAuditLogs: async (params = {}) => {
     const response = await axios.get(`${API_URL}/api/admin/audit-logs`, {

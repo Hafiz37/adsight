@@ -76,20 +76,4 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-/**
- * Middleware khusus untuk akses Admin saja (Fitur Code 1)
- * Digunakan setelah verifyToken
- */
-const verifyAdmin = (req, res, next) => {
-  // Kita tidak perlu panggil verifyToken di dalam sini lagi,
-  // cukup cek req.user yang sudah diisi oleh middleware sebelumnya.
-  if (!req.user || req.user.role !== 'ADMIN') {
-    return res.status(403).json({ 
-      status: "error",
-      message: 'Akses ditolak. Fitur ini hanya untuk admin.' 
-    });
-  }
-  next();
-};
-
-module.exports = { verifyToken, verifyAdmin };
+module.exports = { verifyToken };
