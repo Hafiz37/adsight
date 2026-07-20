@@ -28,7 +28,7 @@ export default function PageReport({ activeCampaignId, campaigns, onSelectCampai
           `${apiUrl}/meta/campaigns/${activeCampaignId}/insights`,
           { headers: { Authorization: `Bearer ${token}` } }
         )
-        const insights = insightsRes.data.insights
+        const insights = insightsRes.data?.data?.insights
         if (insights) {
           setMetrics({
             spend: insights.spend || 0,
@@ -50,7 +50,7 @@ export default function PageReport({ activeCampaignId, campaigns, onSelectCampai
           setScore(recData.score || 0)
           setRecommendations(recData.recommendations || [])
         } catch (recErr) {
-          // Jika rekomendasi belum di-generate, abaikan atau set default
+          setError(recErr.response?.data?.message || 'Gagal memuat rekomendasi AI. Analisis mungkin belum tersedia.')
           setScore(0)
           setRecommendations([])
         }
@@ -198,10 +198,10 @@ export default function PageReport({ activeCampaignId, campaigns, onSelectCampai
                   <div key={m} className="bg-gray-900/40 p-2.5 rounded-lg border border-gray-850/80">
                     <div className="text-[8px] text-gray-600 uppercase">{m}</div>
                     <div className="text-xs font-extrabold text-gray-200 mt-1">
-                      {m === 'Spend' && (metrics?.spend ? `${Math.round(metrics.spend/1000)}k` : '-')}
+                      {m === 'Spend' && (metrics?.spend ? `${Math.round(metrics.spend).toLocaleString('id-ID')}` : '-')}
                       {m === 'CTR' && (metrics?.ctr ? `${metrics.ctr.toFixed(2)}%` : '-')}
-                      {m === 'ROAS' && (metrics?.roas ? `${metrics.roas.toFixed(1)}x` : '-')}
-                      {m === 'Reach' && (metrics?.reach ? `${Math.round(metrics.reach/1000)}k` : '-')}
+                      {m === 'ROAS' && (metrics?.roas ? `${metrics.roas.toFixed(2)}x` : '-')}
+                      {m === 'Reach' && (metrics?.reach ? `${Math.round(metrics.reach).toLocaleString('id-ID')}` : '-')}
                     </div>
                   </div>
                 ))}

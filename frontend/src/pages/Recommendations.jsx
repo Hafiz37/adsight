@@ -63,7 +63,7 @@ const Recommendations = () => {
           `${apiUrl}/meta/campaigns/${campaignId}/insights`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        const insights = response.data.insights;
+        const insights = response.data?.data?.insights;
         if (insights) {
           setMetrics({
             spend: insights.spend || 0,

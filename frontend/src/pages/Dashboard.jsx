@@ -1,6 +1,7 @@
 // frontend/src/pages/Dashboard.jsx
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import axios from 'axios'
 import MetricCard from '../components/MetricCard'
 import PerformanceChart from '../components/PerformanceChart'
 import FilterBar from '../components/FilterBar'
@@ -138,6 +139,27 @@ function PageDashboard({
 }) {
   const navigate = useNavigate()
   const [dismissedErrors, setDismissedErrors] = useState({})
+  const [aiExportData, setAiExportData] = useState({ score: 0, recommendations: [] })
+
+  const token = localStorage.getItem('token')
+  const apiUrl = 'http://localhost:5000/api'
+
+  useEffect(() => {
+    if (!activeCampaignId) return
+    const fetchAiData = async () => {
+      try {
+        const res = await axios.get(
+          `${apiUrl}/meta/campaigns/${activeCampaignId}/recommendations`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        const d = res.data.data
+        setAiExportData({ score: d.score || 0, recommendations: d.recommendations || [] })
+      } catch {
+        setAiExportData({ score: 0, recommendations: [] })
+      }
+    }
+    fetchAiData()
+  }, [activeCampaignId, token, apiUrl])
 
   const getStatusLabel = (type, value) => {
     if (!value || value === '-') return null;
@@ -165,13 +187,19 @@ function PageDashboard({
 
     if (!insightData) return defaultMetrics;
 
-    const ctrVal = insightData.ctr ? insightData.ctr.toFixed(2) : '-';
-    const roasVal = insightData.roas ? insightData.roas.toFixed(2) : '-';
+    const formatMetric = (val, decimals) => {
+      if (val === null || val === undefined) return '-';
+      if (typeof val === 'number') return val.toFixed(decimals);
+      return '-';
+    };
+
+    const ctrVal = formatMetric(insightData.ctr, 2);
+    const roasVal = formatMetric(insightData.roas, 2);
 
     return [
       { 
         label: 'Total Spend', 
-        value: insightData.spend ? Math.round(insightData.spend).toLocaleString('id-ID') : '-', 
+        value: insightData.spend != null ? Math.round(insightData.spend).toLocaleString('id-ID') : '-', 
         unit: 'IDR', 
         icon: <IconSpend /> 
       },
@@ -191,7 +219,7 @@ function PageDashboard({
       },
       { 
         label: 'Total Reach', 
-        value: insightData.reach ? Math.round(insightData.reach).toLocaleString('id-ID') : '-', 
+        value: insightData.reach != null ? Math.round(insightData.reach).toLocaleString('id-ID') : '-', 
         unit: 'orang', 
         icon: <IconReach /> 
       },
@@ -211,8 +239,8 @@ function PageDashboard({
           {activeCampaignId && insightData && (
             <ExportPDFButton
               metrics={insightData}
-              score={0}
-              recommendations={[]}
+              score={aiExportData.score}
+              recommendations={aiExportData.recommendations}
               campaignName={activeCampaign?.name || 'Kampanye'}
               variant="secondary"
               size="md"

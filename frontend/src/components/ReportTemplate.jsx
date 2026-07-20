@@ -155,7 +155,7 @@ export default function ReportTemplate({ metrics, score = 0, recommendations = [
             Total Spend
           </p>
           <p style={{ fontSize: '22px', fontWeight: '800', color: '#f9fafb', margin: '0 0 4px 0' }}>
-            {metrics?.spend ? formatNumber(metrics.spend) : '-'}
+            {metrics?.spend != null ? formatNumber(metrics.spend) : '-'}
           </p>
           <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>IDR</p>
         </div>
@@ -171,7 +171,7 @@ export default function ReportTemplate({ metrics, score = 0, recommendations = [
             Rata-rata CTR
           </p>
           <p style={{ fontSize: '22px', fontWeight: '800', color: '#f9fafb', margin: '0 0 4px 0' }}>
-            {metrics?.ctr ? metrics.ctr.toFixed(2) : '-'}
+            {metrics?.ctr != null ? metrics.ctr.toFixed(2) : '-'}
           </p>
           <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>%</p>
         </div>
@@ -187,7 +187,7 @@ export default function ReportTemplate({ metrics, score = 0, recommendations = [
             ROAS
           </p>
           <p style={{ fontSize: '22px', fontWeight: '800', color: '#f9fafb', margin: '0 0 4px 0' }}>
-            {metrics?.roas ? metrics.roas.toFixed(2) : '-'}
+            {metrics?.roas != null ? metrics.roas.toFixed(2) : '-'}
           </p>
           <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>x</p>
         </div>
@@ -203,7 +203,7 @@ export default function ReportTemplate({ metrics, score = 0, recommendations = [
             Total Reach
           </p>
           <p style={{ fontSize: '22px', fontWeight: '800', color: '#f9fafb', margin: '0 0 4px 0' }}>
-            {metrics?.reach ? formatNumber(metrics.reach) : '-'}
+            {metrics?.reach != null ? formatNumber(metrics.reach) : '-'}
           </p>
           <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>orang</p>
         </div>

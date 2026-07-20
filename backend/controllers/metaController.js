@@ -191,7 +191,7 @@ exports.getCampaigns = async (req, res) => {
         `https://graph.facebook.com/v18.0/${metaAccount.accountId}/campaigns`, // Pakai accountId sesuai schema
         {
           params: {
-            fields: 'id,name,status,created_time,insights.date_preset(last_30d){spend,impressions,clicks,ctr,actions,action_values}',
+            fields: 'id,name,status,created_time,insights.date_preset(last_30d){spend,impressions,clicks,ctr,reach,actions,action_values}',
             access_token: metaAccount.accessToken,
           },
         }
@@ -206,9 +206,11 @@ exports.getCampaigns = async (req, res) => {
         const rawImpressions = parseFloat(insight.impressions) || 0;
         const rawClicks = parseFloat(insight.clicks) || 0;
         const rawCtr = parseFloat(insight.ctr) || 0;
-        const rawRevenue = insight.action_values?.[0]?.value
-          ? parseFloat(insight.action_values[0].value)
-          : 0;
+        const rawReach = parseInt(insight.reach) || Math.round(rawImpressions / 1000);
+        const purchaseValue = (insight.action_values || []).find(
+          av => av.action_type === 'offsite_conversion.fb_pixel_purchase'
+        );
+        const rawRevenue = purchaseValue ? parseFloat(purchaseValue.value) : 0;
         const rawRoas = rawSpend > 0 ? rawRevenue / rawSpend : 0;
         const campaignDate = campaign.created_time ? new Date(campaign.created_time) : new Date();
 
@@ -225,7 +227,7 @@ exports.getCampaigns = async (req, res) => {
             spend: rawSpend,
             ctr: rawCtr,
             roas: rawRoas,
-            reach: Math.round(rawImpressions / 1000),
+            reach: rawReach,
             date: campaignDate,
           },
           create: {
@@ -236,7 +238,7 @@ exports.getCampaigns = async (req, res) => {
             spend: rawSpend,
             ctr: rawCtr,
             roas: rawRoas,
-            reach: Math.round(rawImpressions / 1000),
+            reach: rawReach,
             date: campaignDate,
           },
         });
@@ -321,9 +323,9 @@ exports.getCampaignInsights = async (req, res) => {
         `https://graph.facebook.com/v18.0/${metaCampaignId}/insights`,
         {
           params: {
-            fields: 'spend,impressions,clicks,ctr,actions,action_values',
-            time_range: timeRange,
-            access_token: campaign.metaAccount.accessToken,
+          fields: 'spend,impressions,clicks,ctr,reach,actions,action_values',
+          time_range: timeRange,
+          access_token: campaign.metaAccount.accessToken,
           },
         }
       );
@@ -344,11 +346,12 @@ exports.getCampaignInsights = async (req, res) => {
     const rawSpend = parseFloat(insightsData.spend) || 0;
     const rawImpressions = parseFloat(insightsData.impressions) || 0;
     const rawCtr = parseFloat(insightsData.ctr) || 0;
-    const rawRevenue = insightsData.action_values?.[0]?.value
-      ? parseFloat(insightsData.action_values[0].value)
-      : 0;
+    const rawReach = parseInt(insightsData.reach) || Math.round(rawImpressions / 1000);
+    const purchaseValue = (insightsData.action_values || []).find(
+      av => av.action_type === 'offsite_conversion.fb_pixel_purchase'
+    );
+    const rawRevenue = purchaseValue ? parseFloat(purchaseValue.value) : 0;
     const roas = rawSpend > 0 ? rawRevenue / rawSpend : 0;
-    const reach = Math.round(rawImpressions / 1000);
 
     res.json({
       message: 'Data insights dari Meta Ads',
@@ -356,7 +359,7 @@ exports.getCampaignInsights = async (req, res) => {
         metaCampaignId,
         name: campaign.name,
         status: campaign.status,
-        insights: { spend: rawSpend, impressions: rawImpressions, ctr: rawCtr, roas: roas, reach },
+        insights: { spend: rawSpend, impressions: rawImpressions, ctr: rawCtr, roas: roas, reach: rawReach },
       },
     });
   } catch (error) {
@@ -391,7 +394,7 @@ exports.analyzeCampaign = async (req, res) => {
         `https://graph.facebook.com/v18.0/${metaCampaignId}/insights`,
         {
           params: {
-            fields: 'spend,impressions,clicks,ctr,actions,action_values',
+            fields: 'spend,impressions,clicks,ctr,reach,actions,action_values',
             time_range: { since: start.toISOString().split('T')[0], until: end.toISOString().split('T')[0] },
             access_token: campaign.metaAccount.accessToken,
           },
@@ -407,11 +410,12 @@ exports.analyzeCampaign = async (req, res) => {
       if (campaign.spend > 0) {
         insightsData = {
           spend: campaign.spend,
-          impressions: campaign.reach > 0 ? campaign.reach * 1000 : 0,
+          impressions: 0,
           clicks: 0,
           ctr: campaign.ctr,
+          reach: campaign.reach,
           actions: [],
-          action_values: campaign.roas > 0 ? [{ action_type: 'offsite_conversion.fb_pixel_purchase', value: String(campaign.roas * campaign.spend) }] : [],
+          action_values: [],
         };
         usingDummy = true;
       } else {
@@ -424,15 +428,14 @@ exports.analyzeCampaign = async (req, res) => {
     const impressions = parseFloat(insightsData.impressions) || 0;
     const clicks = parseFloat(insightsData.clicks) || 0;
     const ctr = parseFloat(insightsData.ctr) || 0;
+    const reach = parseInt(insightsData.reach) || Math.round(impressions / 1000);
 
     // Hitung ROAS (Revenue / Spend)
-    const revenue = insightsData.action_values?.[0]?.value
-      ? parseFloat(insightsData.action_values[0].value)
-      : 750000;
+    const purchaseValue = (insightsData.action_values || []).find(
+      av => av.action_type === 'offsite_conversion.fb_pixel_purchase'
+    );
+    const revenue = purchaseValue ? parseFloat(purchaseValue.value) : 0;
     const roas = spend > 0 ? revenue / spend : 0;
-
-    // Hitung Reach (dummy: impressions / 1000)
-    const reach = impressions / 1000;
 
     // Send ke AI Service
     const aiResponse = await axios.post('http://localhost:5001/analyze', {
@@ -449,14 +452,14 @@ exports.analyzeCampaign = async (req, res) => {
       where: { campaignId: campaign.id },
       update: {
         score: score,
-        recommendations: JSON.stringify(recommendations),
+        recommendations: recommendations,
         label: label,
         color: color,
       },
       create: {
         campaignId: campaign.id,
         score: score,
-        recommendations: JSON.stringify(recommendations),
+        recommendations: recommendations,
         label: label,
         color: color,
       },
@@ -515,7 +518,7 @@ exports.getCampaignRecommendations = async (req, res) => {
           `https://graph.facebook.com/v18.0/${metaCampaignId}/insights`,
           {
             params: {
-              fields: 'spend,impressions,clicks,ctr,actions,action_values',
+            fields: 'spend,impressions,clicks,ctr,reach,actions,action_values',
               time_range: { since: start.toISOString().split('T')[0], until: end.toISOString().split('T')[0] },
               access_token: campaign.metaAccount.accessToken,
             },
@@ -529,12 +532,19 @@ exports.getCampaignRecommendations = async (req, res) => {
       if (!insightsData && campaign.spend > 0) {
         insightsData = {
           spend: campaign.spend,
-          impressions: campaign.reach > 0 ? campaign.reach * 1000 : 0,
+          impressions: 0,
           clicks: 0,
           ctr: campaign.ctr,
+          reach: campaign.reach,
           actions: [],
-          action_values: campaign.roas > 0 ? [{ action_type: 'offsite_conversion.fb_pixel_purchase', value: String(campaign.roas * campaign.spend) }] : [],
+          action_values: [],
         };
+      }
+
+      if (!insightsData) {
+        return res.status(400).json({
+          message: 'Meta API tidak dapat dijangkau dan tidak ada data tersimpan untuk kampanye ini. Silakan jalankan analisis secara manual setelah kampanye memiliki data.'
+        });
       }
 
       // Hitung metrik
@@ -542,11 +552,12 @@ exports.getCampaignRecommendations = async (req, res) => {
       const impressions = parseFloat(insightsData.impressions) || 0;
       const clicks = parseFloat(insightsData.clicks) || 0;
       const ctr = parseFloat(insightsData.ctr) || 0;
-      const revenue = insightsData.action_values?.[0]?.value
-        ? parseFloat(insightsData.action_values[0].value)
-        : 750000;
+      const reach = parseInt(insightsData.reach) || Math.round(impressions / 1000);
+      const purchaseValue = (insightsData.action_values || []).find(
+        av => av.action_type === 'offsite_conversion.fb_pixel_purchase'
+      );
+      const revenue = purchaseValue ? parseFloat(purchaseValue.value) : 0;
       const roas = spend > 0 ? revenue / spend : 0;
-      const reach = impressions / 1000;
 
       // Call AI Service
       const aiResponse = await axios.post('http://localhost:5001/analyze', {
@@ -563,26 +574,32 @@ exports.getCampaignRecommendations = async (req, res) => {
         data: {
           campaignId: campaign.id,
           score: score,
-          recommendations: JSON.stringify(recommendations),
+          recommendations: recommendations,
           label: label,
           color: color,
         },
       });
     }
 
-    // Parse recommendations dari JSON string
-    const parsedRecommendations = JSON.parse(recommendation.recommendations || '[]');
+    // Parse recommendations (handle both string and pre-parsed array)
+    let parsedRecommendations = recommendation.recommendations;
+    if (typeof parsedRecommendations === 'string') {
+      parsedRecommendations = JSON.parse(parsedRecommendations || '[]');
+    }
 
     // Transform ke format yang lebih readable
     const transformedRecommendations = parsedRecommendations.map((rec, index) => ({
       id: `rec-${index}`,
-      title: rec.recommendation,
-      description: `${rec.reason}. Tingkat prioritas: ${rec.priority === 'high' ? 'Tinggi - segera perbaiki' : rec.priority === 'medium' ? 'Sedang - rencanakan perbaikan' : 'Rendah - pertahankan atau optimalkan lebih lanjut'}`,
+      title: rec.message || rec.recommendation,
+      category: rec.category,
+      description: rec.impact
+        ? `${rec.impact}\n\nLangkah-langkah yang bisa dilakukan:\n${rec.action}`
+        : `${rec.priority === 'high' ? 'Segera perbaiki' : rec.priority === 'medium' ? 'Rencanakan perbaikan' : 'Pertahankan atau optimalkan lebih lanjut'}.`,
       priority: rec.priority,
       metrics: {
-        'Metrik Terkait': rec.metric,
+        'Metrik': rec.metric,
         'Nilai Saat Ini': rec.current_value,
-        'Target': rec.threshold,
+        'Target Ideal': rec.threshold,
       },
     }));
 
@@ -590,7 +607,7 @@ exports.getCampaignRecommendations = async (req, res) => {
       message: 'Rekomendasi kampanye berhasil diambil',
       data: {
         score: recommendation.score,
-        name: campaign.name,
+        campaignName: campaign.name,
         label: recommendation.label,
         color: recommendation.color,
         recommendations: transformedRecommendations,
@@ -662,7 +679,7 @@ exports.getCampaignInsightsHistory = async (req, res) => {
     try {
       const resp = await axios.get(`https://graph.facebook.com/v18.0/${metaCampaignId}/insights`, {
         params: {
-          fields: 'spend,impressions,clicks,ctr,actions,action_values',
+          fields: 'spend,impressions,clicks,ctr,reach,actions,action_values',
           time_range: { since: startDate, until: endDate },
           time_increment: 1,
           access_token: campaign.metaAccount.accessToken,
@@ -676,7 +693,10 @@ exports.getCampaignInsightsHistory = async (req, res) => {
         const spend = parseFloat(row.spend) || 0;
         const impressions = parseFloat(row.impressions) || 0;
         const ctr = parseFloat(row.ctr) || 0;
-        const revenue = row.action_values?.[0]?.value ? parseFloat(row.action_values[0].value) : 0;
+        const purchaseValue = (row.action_values || []).find(
+          av => av.action_type === 'offsite_conversion.fb_pixel_purchase'
+        );
+        const revenue = purchaseValue ? parseFloat(purchaseValue.value) : 0;
         const roas = spend > 0 ? revenue / spend : 0;
 
         dailyData.push({
@@ -697,7 +717,7 @@ exports.getCampaignInsightsHistory = async (req, res) => {
       try {
         const aggResp = await axios.get(`https://graph.facebook.com/v18.0/${metaCampaignId}/insights`, {
           params: {
-            fields: 'spend,impressions,clicks,ctr,actions,action_values',
+            fields: 'spend,impressions,clicks,ctr,reach,actions,action_values',
             time_range: { since: startDate, until: endDate },
             access_token: campaign.metaAccount.accessToken,
           },
@@ -707,7 +727,10 @@ exports.getCampaignInsightsHistory = async (req, res) => {
         if (agg && parseFloat(agg.spend) > 0) {
           const totalSpend = parseFloat(agg.spend) || 0;
           const avgCtr = parseFloat(agg.ctr) || 0;
-          const revenue = agg.action_values?.[0]?.value ? parseFloat(agg.action_values[0].value) : 0;
+          const purchaseValue = (agg.action_values || []).find(
+            av => av.action_type === 'offsite_conversion.fb_pixel_purchase'
+          );
+          const revenue = purchaseValue ? parseFloat(purchaseValue.value) : 0;
           const avgRoas = totalSpend > 0 ? revenue / totalSpend : 0;
 
           const start = new Date(startDate);

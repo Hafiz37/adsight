@@ -78,19 +78,46 @@ def calculate_score(ctr, roas, reach, spend):
 # FUNGSI: Generate rekomendasi berdasarkan metrik
 def generate_recommendations(score, ctr, roas, spend, reach):
     recommendations = []
+    rpm = (reach / spend) * 1000 if spend > 0 else 0
+
+    detail_ctr = (
+        "CTR (Click-Through Rate) adalah persentase orang yang melihat iklan Anda dan kemudian mengkliknya. "
+        "Ini adalah indikator seberapa relevan dan menarik iklan Anda bagi audiens. "
+        "Semakin tinggi CTR, semakin efektif iklan Anda dalam menarik perhatian."
+    )
+    detail_roas = (
+        "ROAS (Return on Ad Spend) adalah rasio pendapatan yang dihasilkan dibandingkan dengan biaya iklan. "
+        "Ini mengukur efisiensi pengeluaran iklan Anda. "
+        "ROAS di atas 4x dianggap sangat baik, sementara di bawah 2x menandakan perlu optimasi."
+    )
+    detail_rpm = (
+        "RPM (Reach per 1000 Spend) mengukur efisiensi jangkauan iklan Anda. "
+        "Semakin tinggi RPM, semakin banyak orang yang dapat Anda jangkau dengan setiap rupiah yang dibelanjakan. "
+        "Ini dipengaruhi oleh pemilihan audiens, penempatan iklan, dan strategi bidding."
+    )
 
     # --- CTR ---
     if ctr < 1:
         recommendations.append({
             "priority": "high",
             "category": "Creative",
-            "message": "CTR Anda di bawah 1% - ganti gambar atau video iklan dengan konten yang lebih menarik perhatian."
+            "metric": "CTR",
+            "current_value": f"{ctr:.2f}%",
+            "threshold": "> 3% (baik) / 1-3% (cukup)",
+            "message": f"CTR Anda {ctr:.2f}% — sangat rendah. Ini berarti iklan Anda kurang menarik perhatian audiens.",
+            "impact": "Rendahnya CTR menyebabkan biaya per klik (CPC) menjadi lebih mahal dan audiens yang menjangkau lebih sedikit karena algoritma Meta cenderung menampilkan iklan dengan engagement tinggi.",
+            "action": "1. Ganti gambar atau video dengan visual yang lebih menarik dan relevan.\n2. Tulis ulang headline dan copy agar lebih persuasif dan spesifik.\n3. Tambahkan elemen urgensi seperti diskon terbatas atau countdown.\n4. Uji berbagai variasi kreatif (A/B test) untuk menemukan yang paling efektif.\n5. Pastikan Call-to-Action (CTA) jelas dan mendorong tindakan."
         })
     elif ctr < 2:
         recommendations.append({
             "priority": "medium",
             "category": "Creative",
-            "message": "CTR Anda cukup baik tapi masih bisa ditingkatkan - coba variasikan copywriting atau call-to-action."
+            "metric": "CTR",
+            "current_value": f"{ctr:.2f}%",
+            "threshold": "> 3% (baik) / 1-3% (cukup)",
+            "message": f"CTR Anda {ctr:.2f}% — cukup baik, tapi masih bisa ditingkatkan.",
+            "impact": "CTR yang berada di kisaran rata-rata menandakan iklan Anda cukup relevan, namun ada ruang untuk optimasi agar performa lebih maksimal dan biaya iklan lebih efisien.",
+            "action": "1. Variasikan copywriting dengan pendekatan manfaat (benefit-driven) bukan fitur (feature-driven).\n2. Gunakan social proof seperti testimoni atau jumlah pelanggan.\n3. Optimalkan CTA dengan kata-kata yang lebih spesifik dan mengundang tindakan.\n4. Coba format iklan berbeda seperti carousel, video pendek, atau collection ads.\n5. Lakukan A/B testing pada elemen headline secara rutin."
         })
 
     # --- ROAS ---
@@ -98,29 +125,48 @@ def generate_recommendations(score, ctr, roas, spend, reach):
         recommendations.append({
             "priority": "high",
             "category": "Budget & Audience",
-            "message": "ROAS di bawah 2 - kurangi budget harian atau ubah target audiens agar lebih relevan."
+            "metric": "ROAS",
+            "current_value": f"{roas:.2f}x",
+            "threshold": "> 4x (baik) / 2-4x (cukup)",
+            "message": f"ROAS Anda {roas:.2f}x — di bawah 2x, artinya pengeluaran iklan belum efisien.",
+            "impact": "ROAS rendah berarti Anda mengeluarkan lebih banyak biaya dibanding pendapatan yang dihasilkan. Ini dapat menggerus margin keuntungan dan membuat kampanye tidak berkelanjutan dalam jangka panjang.",
+            "action": "1. Evaluasi ulang target audiens — persempit berdasarkan data demografis, minat, dan perilaku yang sudah terbukti konversi.\n2. Gunakan audiens lookalike dari data pelanggan existing (seed audience).\n3. Kurangi budget harian sementara dan alokasikan ke kampanye dengan performa terbaik.\n4. Optimalkan halaman landing page — pastikan relevan dengan iklan dan memiliki CTA yang jelas.\n5. Pastikan pixel Meta terpasang dengan benar dan melacak konversi secara akurat."
         })
     elif roas < 3:
         recommendations.append({
             "priority": "medium",
             "category": "Budget & Audience",
-            "message": "ROAS belum optimal - pertimbangkan mempersempit target audiens berdasarkan interest atau lookalike."
+            "metric": "ROAS",
+            "current_value": f"{roas:.2f}x",
+            "threshold": "> 4x (baik) / 2-4x (cukup)",
+            "message": f"ROAS Anda {roas:.2f}x — sudah cukup, namun belum optimal.",
+            "impact": "ROAS di kisaran ini menandakan kampanye Anda hampir efisien. Dengan optimasi yang tepat, Anda bisa meningkatkan pendapatan tanpa menambah biaya iklan secara signifikan.",
+            "action": "1. Persempit target audiens berdasarkan data konversi — fokus pada segmen dengan ROAS tertinggi.\n2. Buat audiens lookalike dari data pelanggan dengan nilai pembelian tinggi (high LTV).\n3. Coba retargeting untuk pengunjung website yang belum melakukan konversi.\n4. Optimasi jadwal penayangan iklan pada jam-jam dengan konversi tertinggi.\n5. Evaluasi penawaran (offer) — apakah diskon, bundle, atau free shipping bisa meningkatkan konversi?"
         })
 
     # --- Reach vs Spend ---
     if spend > 0:
-        rpm = (reach / spend) * 1000
         if rpm < 100:
             recommendations.append({
                 "priority": "high",
                 "category": "Distribution",
-                "message": "Jangkauan sangat rendah dibanding budget - perluas target lokasi atau perbesar ukuran audiens."
+                "metric": "RPM",
+                "current_value": f"{rpm:.0f}",
+                "threshold": "> 500 (baik) / 100-500 (cukup)",
+                "message": f"RPM Anda {rpm:.0f} — jangkauan sangat rendah dibandingkan budget yang dikeluarkan.",
+                "impact": "RPM rendah berarti Anda membayar lebih mahal untuk setiap orang yang terjangkau. Ini bisa disebabkan oleh audiens yang terlalu sempit, penempatan iklan yang tidak optimal, atau strategi bidding yang kurang tepat.",
+                "action": "1. Perluas target audiens — tambahkan minat terkait, perluas rentang usia, atau buka ke lokasi yang lebih luas.\n2. Gunakan Advantage+ Placements (otomatis) agar Meta dapat menempatkan iklan di posisi dengan biaya terendah.\n3. Pertimbangkan strategi bidding Lowest Cost tanpa batas atas untuk memaksimalkan jangkauan.\n4. Refresh kreatif secara berkala untuk mencegah audience fatigue.\n5. Coba Campaign Type 'Reach' jika tujuan utama Anda adalah brand awareness."
             })
         elif rpm < 300:
             recommendations.append({
                 "priority": "medium",
                 "category": "Distribution",
-                "message": "Jangkauan masih bisa ditingkatkan - coba gunakan Advantage+ Placements di Meta Ads Manager."
+                "metric": "RPM",
+                "current_value": f"{rpm:.0f}",
+                "threshold": "> 500 (baik) / 100-500 (cukup)",
+                "message": f"RPM Anda {rpm:.0f} — jangkauan cukup, namun masih bisa ditingkatkan.",
+                "impact": "Efisiensi jangkauan Anda saat ini berada di tingkat menengah. Dengan optimasi distribusi, Anda bisa menjangkau lebih banyak orang dengan budget yang sama.",
+                "action": "1. Gunakan Advantage+ Placements untuk mengoptimasi penempatan iklan secara otomatis.\n2. Tambahan variasi kreatif untuk menghindari audience fatigue.\n3. Coba perbesar minor adjustments pada target audiens.\n4. Manfaatkan fitur Dynamic Creative untuk menguji berbagai kombinasi secara otomatis.\n5. Pantau frequency — jika di atas 3-4, refresh kreatif atau perluas audiens."
             })
 
     # --- Skor keseluruhan ---
@@ -128,13 +174,23 @@ def generate_recommendations(score, ctr, roas, spend, reach):
         recommendations.append({
             "priority": "low",
             "category": "Scaling",
-            "message": "Performa sangat baik! Pertimbangkan menaikkan budget 10-20% per hari untuk memperluas jangkauan."
+            "metric": "Skor Keseluruhan",
+            "current_value": f"{score}/100",
+            "threshold": "> 80 (sangat baik)",
+            "message": "Performa kampanye Anda sangat baik! Sekarang saatnya melakukan scaling.",
+            "impact": "Dengan skor di atas 80, kampanye Anda telah menunjukkan performa yang solid di semua metrik utama. Ini adalah momentum yang tepat untuk memperluas jangkauan dan meningkatkan pendapatan secara agresif.",
+            "action": "1. Naikkan budget harian secara bertahap 10-20% per hari — pantau selama 3 hari sebelum menaikkan lagi.\n2. Buat kampanye terpisah dengan audiens lookalike dari data konversi existing.\n3. Ekspansi ke lokasi atau negara baru yang masih satu region.\n4. Manfaatkan fitur Campaign Budget Optimization (CBO) untuk alokasi budget otomatis.\n5. Tambahkan produk atau layanan baru ke dalam campaign untuk cross-selling."
         })
     elif score >= 60:
         recommendations.append({
             "priority": "low",
             "category": "Optimization",
-            "message": "Performa di atas rata-rata - lakukan A/B testing pada elemen iklan untuk hasil lebih optimal."
+            "metric": "Skor Keseluruhan",
+            "current_value": f"{score}/100",
+            "threshold": "> 80 (sangat baik) / 60-79 (cukup)",
+            "message": "Performa kampanye di atas rata-rata. Beberapa optimasi dapat mendorong hasil lebih baik.",
+            "impact": "Skor Anda menunjukkan bahwa kampanye sudah berjalan cukup baik, namun masih ada metrik yang bisa ditingkatkan. Dengan optimasi yang tepat, Anda bisa mencapai performa excellent.",
+            "action": "1. Lakukan A/B testing pada berbagai elemen iklan — kreatif, headline, CTA, dan audiens.\n2. Analisis data demografis dan waktu untuk menemukan segmen dengan performa terbaik.\n3. Optimasi landing page untuk meningkatkan conversion rate.\n4. Coba strategi retargeting untuk pengunjung yang belum konversi.\n5. Evaluasi frekuensi iklan — jika terlalu tinggi, refresh kreatif atau perluas audiens."
         })
 
     # Edge case
@@ -142,7 +198,12 @@ def generate_recommendations(score, ctr, roas, spend, reach):
         recommendations.append({
             "priority": "low",
             "category": "General",
-            "message": "Tidak ada rekomendasi khusus saat ini. Pantau performa iklan secara berkala."
+            "metric": "-",
+            "current_value": "-",
+            "threshold": "-",
+            "message": "Tidak ada rekomendasi khusus saat ini. Pantau performa iklan secara berkala.",
+            "impact": "Semua metrik kampanye Anda berada dalam kondisi yang stabil.",
+            "action": "1. Pantau performa iklan secara rutin (minimal 3x seminggu).\n2. Catat tren perubahan metrik dari waktu ke waktu.\n3. Siapkan cadangan kreatif untuk rotasi.\n4. Review kompetitor dan tren industri untuk tetap relevan."
         })
 
     # Urutkan: high -> medium -> low

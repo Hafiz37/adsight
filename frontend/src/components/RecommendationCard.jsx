@@ -35,12 +35,29 @@ const RecommendationCard = ({
     return 'Prioritas Rendah';
   };
 
+  const getCategoryColor = (category) => {
+    const colors = {
+      'Creative': 'bg-pink-900/40 text-pink-300 border-pink-700/50',
+      'Budget & Audience': 'bg-amber-900/40 text-amber-300 border-amber-700/50',
+      'Distribution': 'bg-cyan-900/40 text-cyan-300 border-cyan-700/50',
+      'Scaling': 'bg-green-900/40 text-green-300 border-green-700/50',
+      'Optimization': 'bg-blue-900/40 text-blue-300 border-blue-700/50',
+      'General': 'bg-gray-800 text-gray-300 border-gray-700/50',
+    };
+    return colors[category] || 'bg-gray-800 text-gray-300 border-gray-700/50';
+  };
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow">
       {/* Header: Icon + Priority Badge */}
       <div className="flex items-start justify-between mb-4">
-        <div>
+        <div className="flex items-center gap-3">
           {getPriorityIcon(recommendation.priority)}
+          {recommendation.category && (
+            <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${getCategoryColor(recommendation.category)}`}>
+              {recommendation.category}
+            </span>
+          )}
         </div>
         <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${getPriorityBadgeColor(recommendation.priority)}`}>
           {getPriorityLabel(recommendation.priority)}
@@ -53,33 +70,25 @@ const RecommendationCard = ({
       </h4>
 
       {/* Deskripsi */}
-      <p className="text-gray-300 text-sm mb-4 leading-relaxed">
+      <div className="text-gray-300 text-sm mb-4 leading-relaxed whitespace-pre-line">
         {recommendation.description}
-      </p>
+      </div>
 
-      {/* Tabel Metrik (jika ada) */}
+      {/* Tabel Metrik */}
       {recommendation.metrics && (
-        <div className="bg-gray-800 rounded-lg p-3 mb-4 text-xs text-gray-300">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="bg-gray-800 rounded-xl p-4 border border-gray-700/50">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             {Object.entries(recommendation.metrics).map(([key, value]) => (
-              <div key={key} className="flex justify-between">
-                <span className="font-semibold">{key}:</span>
-                <span>{value}</span>
+              <div key={key} className="bg-gray-800/80 rounded-lg p-3 text-center">
+                <span className="block text-gray-500 font-medium mb-1">{key}</span>
+                <span className="block text-white font-bold text-sm">{value}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Footer: Action */}
-      <div className="flex gap-3">
-        <button
-          onClick={() => onAnalyzeAgain && onAnalyzeAgain()}
-          className="flex-1 bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-700 hover:to-violet-600 text-white font-semibold py-2 px-4 rounded-lg transition-all text-sm"
-        >
-          Perbaiki Sekarang
-        </button>
-      </div>
+      {/* Footer: Action (sementara disembunyikan) */}
     </div>
   );
 };
